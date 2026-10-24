@@ -1,0 +1,49 @@
+{
+  "name": "moyer-mail",
+  "productName": "Moyer Mail",
+  "version": "0.2.0",
+  "description": "个人多邮箱统一管理器：QQ / Gmail / Outlook / 163 等，统一收发，内置翻译",
+  "author": "Moyer",
+  "license": "UNLICENSED",
+  "private": true,
+  "main": "./out/main/index.js",
+  "scripts": {
+    "dev": "electron-vite dev",
+    "build": "electron-vite build",
+    "start": "electron-vite preview",
+    "typecheck": "tsc --noEmit -p tsconfig.node.json && tsc --noEmit -p tsconfig.web.json",
+    "icon": "node scripts/make-icon.mjs",
+    "dist": "electron-vite build && electron-builder --win --x64",
+    "build:core": "vite build --config vite.core.config.ts",
+    "test": "vite build --config vite.core.config.ts && node --test tests/engine.test.mjs",
+    "web": "vite --config vite.web.config.ts"
+  },
+  "dependencies": {
+    "imapflow": "^2.9.1",
+    "mailparser": "^3.12.4",
+    "nodemailer": "^10.2.1",
+    "socks": "^2.8.10"
+  },
+  "devDependencies": {
+    "@tanstack/react-virtual": "^3.14.22",
+    "@types/dompurify": "^3.0.5",
+    "@types/mailparser": "^3.9.0",
+    "@types/node": "^26.6.5",
+    "@types/nodemailer": "^8.0.2",
+    "@types/react": "^19.3.0",
+    "@types/react-dom": "^19.3.0",
+    "@vitejs/plugin-react": "^6.1.2",
+    "dompurify": "^3.4.17",
+    "electron": "^45.0.0",
+    "electron-builder": "^26.15.3",
+    "electron-vite": "^6.0.0",
+    "hoodiecrow-imap": "^3.3.1",
+    "lucide-react": "^1.61.0",
+    "react": "^19.3.1",
+    "react-dom": "^19.3.1",
+    "smtp-server": "^3.21.1",
+    "typescript": "^7.0.2",
+    "vite": "^8.3.5",
+    "zustand": "^5.0.16"
+  }
+}

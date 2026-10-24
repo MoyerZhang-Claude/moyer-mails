@@ -1,0 +1,31 @@
+appId: com.moyer.mail
+productName: Moyer Mail
+copyright: Copyright © 2026 Moyer
+directories:
+  buildResources: build
+  output: dist
+files:
+  - out/main/**
+  - out/preload/**
+  - out/renderer/**
+  - resources/**
+  - package.json
+  - '!**/*.map'
+npmRebuild: false
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+  icon: build/icon.ico
+  artifactName: MoyerMail-Setup-${version}.${ext}
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+  shortcutName: Moyer Mail
+  installerIcon: build/icon.ico
+  uninstallerIcon: build/icon.ico
+  language: '2052'
+  installerLanguages: [zh_CN]
