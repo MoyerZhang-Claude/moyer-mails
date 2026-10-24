@@ -9,7 +9,7 @@
 
 ## 安装
 
-双击 `dist\MoyerMail-Setup-0.1.0.exe` 安装。安装包没有数字签名，Windows 可能提示“未知发布者”，点“更多信息 → 仍要运行”即可。
+到 [Releases 发布页](https://github.com/MoyerZhang-Claude/moyer-mails/releases/latest) 下载 `MoyerMail-Setup-x.x.x.exe`，双击安装（Windows 10/11）。安装包没有数字签名，Windows 可能提示“未知发布者”，点“更多信息 → 仍要运行”即可。
 
 关闭窗口时软件会缩到右下角托盘继续收信；要彻底退出，右键托盘图标 → 退出。
 
