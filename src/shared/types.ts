@@ -188,6 +188,8 @@ export interface Settings {
   loadRemoteImages: boolean
   markReadOnOpen: boolean
   notifications: boolean
+  /** 仅安卓：退到后台后保持收信（常驻通知） */
+  backgroundSync?: boolean
   closeToTray: boolean
   launchAtLogin: boolean
   syncIntervalMin: number

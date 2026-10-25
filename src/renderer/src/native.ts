@@ -1,5 +1,6 @@
 // 安卓（Capacitor）专用：状态栏颜色、返回键。桌面版不会执行这里的代码。
-import { selectMessage, setSearch, useStore } from './store'
+import { nativePlugin } from './api'
+import { selectMessage, setSearch, setView, useStore } from './store'
 
 interface CapacitorGlobal {
   isNativePlatform?: () => boolean
@@ -38,8 +39,36 @@ async function setupBackButton() {
   })
 }
 
+/** 界面加载完成后：申请通知权限；如果是从新邮件通知点进来的，打开那封邮件 */
+async function onReady() {
+  if (!nativePlugin) return
+  if (useStore.getState().settings?.notifications !== false) await nativePlugin.requestNotifications().catch(() => undefined)
+  const { id } = await nativePlugin.takeLaunchMessage().catch(() => ({ id: null }))
+  if (id) {
+    setView({ kind: 'unified', box: 'inbox' })
+    void selectMessage(id)
+  }
+}
+
+export async function backgroundUnrestricted(): Promise<boolean> {
+  return (await nativePlugin?.backgroundStatus().catch(() => null))?.unrestricted ?? false
+}
+
+export function openBatterySettings() {
+  void nativePlugin?.openBatterySettings()
+}
+
+export async function requestNotificationPermission(): Promise<boolean> {
+  return (await nativePlugin?.requestNotifications().catch(() => null))?.granted ?? false
+}
+
 export function setupNative() {
   if (!isNative) return
   document.documentElement.classList.add('native', `platform-${cap?.getPlatform?.() ?? 'android'}`)
   void setupBackButton()
+  const unsub = useStore.subscribe((s) => {
+    if (!s.ready) return
+    unsub()
+    void onReady()
+  })
 }

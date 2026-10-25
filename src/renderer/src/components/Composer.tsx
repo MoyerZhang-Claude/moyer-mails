@@ -362,23 +362,10 @@ function Composer({ c }: { c: ComposerState }) {
               <div className="tr-panel-head">
                 <Languages size={15} />
                 <span className="grow">
-                  {tr.loading ? `正在翻译成${langName(tr.lang)}…` : `${langName(tr.lang)}译文（可以直接修改）`}
+                  {tr.loading ? `正在翻译成${langName(tr.lang)}…` : `${langName(tr.lang)}译文`}
+                  {!tr.loading && <span className="tr-panel-hint">可以直接修改</span>}
                 </span>
-                {tr.html != null && !tr.loading && (
-                  <>
-                    <button className="btn sm" onClick={backTranslate} title="把译文再翻回中文，检查意思对不对">
-                      {tr.backLoading ? <LoaderCircle size={13} className="spin" /> : null}
-                      回译检查
-                    </button>
-                    <button className="btn sm" onClick={() => applyTr('both')} title="译文在上，原文在下">
-                      双语
-                    </button>
-                    <button className="btn soft sm" onClick={() => applyTr('replace')}>
-                      替换正文
-                    </button>
-                  </>
-                )}
-                <button className="btn icon sm" onClick={() => setShowTr(false)}>
+                <button className="btn icon sm" onClick={() => setShowTr(false)} title="关闭">
                   <X size={14} />
                 </button>
               </div>
@@ -389,6 +376,20 @@ function Composer({ c }: { c: ComposerState }) {
                 </div>
               ) : (
                 <div ref={trEditor} className="editor" contentEditable suppressContentEditableWarning />
+              )}
+              {tr.html != null && !tr.loading && (
+                <div className="tr-panel-actions">
+                  <button className="btn sm" onClick={backTranslate} title="把译文再翻回中文，检查意思对不对">
+                    {tr.backLoading ? <LoaderCircle size={13} className="spin" /> : null}
+                    回译检查
+                  </button>
+                  <button className="btn sm" onClick={() => applyTr('both')} title="译文在上，原文在下">
+                    中外双语
+                  </button>
+                  <button className="btn soft sm" onClick={() => applyTr('replace')}>
+                    用译文替换正文
+                  </button>
+                </div>
               )}
               {tr.back && (
                 <div className="tr-back">
@@ -455,7 +456,9 @@ function Composer({ c }: { c: ComposerState }) {
           <button className="btn icon" title="添加附件" onClick={pick}>
             <Paperclip size={17} />
           </button>
-          <span className="sep" style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 6px' }} />
+          <span className="sep foot-sep" style={{ width: 1, height: 18, background: 'var(--line)', margin: '0 6px' }} />
+          {/* “翻译成”和语言选择放在一起，窄屏换行时不会被拆开 */}
+          <span className="tr-group">
           <button className={cx('btn', showTr && 'active')} onClick={() => void translateDraft()} title="把正文翻译成外语">
             <Languages size={16} />
             翻译成
@@ -475,8 +478,9 @@ function Composer({ c }: { c: ComposerState }) {
               </option>
             ))}
           </select>
+          </span>
           <span className="grow" />
-          <span className="faint" style={{ fontSize: 12, marginRight: 6 }}>
+          <span className="faint kbd-hint" style={{ fontSize: 12, marginRight: 6 }}>
             Ctrl+Enter 发送
           </span>
           <button className="btn icon" title="放弃" onClick={discard}>

@@ -2304,3 +2304,129 @@ code {
   display: none;
 }
 
+
+/* ============ 排版修正：窄屏不再竖排、不再重叠 ============ */
+/* 纵向排列的弹窗内容：每一项保持自己的高度，放不下就滚动，不要被压扁叠在一起 */
+.dialog-body > *,
+.settings-body > *,
+.thread > * {
+  flex-shrink: 0;
+}
+
+.segmented button,
+.chip,
+.btn {
+  white-space: nowrap;
+}
+
+.tr-panel-hint {
+  margin-left: 8px;
+  font-weight: 400;
+  color: var(--text-3);
+}
+
+.tr-panel-actions {
+  display: flex;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  gap: 6px;
+  padding: 8px 10px;
+  border-top: 1px solid color-mix(in srgb, var(--accent) 15%, transparent);
+}
+
+@media (max-width: 640px) {
+  /* 设置：左侧分类改成顶部可横向滑动的标签 */
+  .settings {
+    flex-direction: column;
+  }
+
+  .settings-nav {
+    width: auto;
+    flex-direction: row;
+    overflow-x: auto;
+    scrollbar-width: none;
+    padding: 0 12px 8px;
+    border-right: none;
+    border-bottom: 1px solid var(--line);
+    gap: 4px;
+  }
+
+  .settings-nav::-webkit-scrollbar {
+    display: none;
+  }
+
+  .settings-nav .nav-item {
+    flex-shrink: 0;
+    height: 32px;
+    padding: 0 12px;
+  }
+
+  .settings-body {
+    padding: 4px 16px 24px;
+  }
+
+  /* 一行放不下时，开关/选择框换到下一行，文字保持横排 */
+  .set-row {
+    flex-wrap: wrap;
+    row-gap: 8px;
+  }
+
+  .set-row .label {
+    flex: 1 1 180px;
+  }
+
+  .dialog-head {
+    padding: 12px 10px 8px 16px;
+  }
+
+  .dialog-body {
+    padding: 4px 16px 16px;
+  }
+
+  .grid-2 {
+    grid-template-columns: 1fr 80px !important;
+  }
+
+  .grid-2 > select {
+    grid-column: 1 / -1;
+  }
+
+  /* 写信：底部按钮放不下就换行；手机上没有 Ctrl+Enter */
+  .composer-foot {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .composer-foot .kbd-hint {
+    display: none;
+  }
+
+  /* 手机上弹窗和写信窗口用不透明底色，背后的列表不再透出来 */
+  .composer,
+  .dialog {
+    background: var(--surface);
+    backdrop-filter: none;
+    -webkit-backdrop-filter: none;
+  }
+
+  .c-field > label {
+    width: 48px;
+  }
+}
+
+.tr-group {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  flex-shrink: 0;
+}
+
+@media (max-width: 640px) {
+  .composer-foot .foot-sep {
+    display: none;
+  }
+
+  .tr-group .select {
+    width: 96px !important;
+  }
+}

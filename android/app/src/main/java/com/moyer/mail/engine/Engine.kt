@@ -2,7 +2,13 @@ package com.moyer.mail.engine
 
 import android.content.Context
 import android.content.Intent
+import android.content.ActivityNotFoundException
+import android.content.ContentValues
 import android.net.Uri
+import android.os.Build
+import android.os.Environment
+import android.provider.MediaStore
+import androidx.core.content.FileProvider
 import android.util.Log
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -14,12 +20,13 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import org.json.JSONArray
 import org.json.JSONObject
+import java.io.File
 import java.util.UUID
 import java.util.concurrent.ConcurrentHashMap
 import javax.mail.Flags
 
 private const val DEFAULT_SETTINGS = """{"theme":"system","palette":"mist","orbs":true,"density":"comfortable","threading":true,
-"loadRemoteImages":true,"markReadOnOpen":true,"notifications":true,"closeToTray":true,"launchAtLogin":false,"syncIntervalMin":5,
+"loadRemoteImages":true,"markReadOnOpen":true,"notifications":true,"backgroundSync":true,"closeToTray":true,"launchAtLogin":false,"syncIntervalMin":5,
 "proxy":{"mode":"off","url":""},
 "translate":{"provider":"google","targetLang":"zh","autoTranslate":false,"listSubjects":true,"display":"replace",
 "llm":{"baseUrl":"https://api.deepseek.com/v1","apiKey":"","model":"deepseek-chat"},"deepl":{"apiKey":""},"azure":{"key":"","region":""}},
@@ -84,9 +91,16 @@ class Engine private constructor(private val ctx: Context) {
         emitCounts()
     }
 
+    /** 界面是否正显示在屏幕上（由插件在 onResume / onPause 时更新） */
+    @Volatile var appVisible = false
+
     fun onNewMessages(accountId: String, ids: List<Long>) {
-        // 系统通知在下一步（后台常驻服务）里加上；现在先刷新未读数
         emitCounts()
+        // 正开着应用时列表会直接刷新出来，不用再弹系统通知
+        if (appVisible || !settings().optBoolean("notifications", true)) return
+        val rows = db.messagesByIds(ids).filter { !it.seen }
+        val label = db.getAccount(accountId)?.optString("label") ?: ""
+        runCatching { Notifier.newMail(ctx, label, rows) }.onFailure { Log.w("MoyerEngine", "notify", it) }
     }
 
     fun storeParsed(row: MessageRow, p: ParsedBody) {
@@ -118,7 +132,7 @@ class Engine private constructor(private val ctx: Context) {
         return out
     }
 
-    private fun settings(): JSONObject {
+    fun settings(): JSONObject {
         val stored = db.getKv("settings")?.let { runCatching { JSONObject(it) }.getOrNull() } ?: JSONObject()
         val plain = mapSecrets(stored) { v -> if (v.startsWith("enc:")) runCatching { Secrets.decrypt(v.removePrefix("enc:")) }.getOrDefault("") else v }
         return deepMerge(JSONObject(DEFAULT_SETTINGS), plain)
@@ -152,9 +166,10 @@ class Engine private constructor(private val ctx: Context) {
         "runRules" -> 0
         "scheduleSend", "cancelScheduled", "sendScheduledNow" -> throw UserError("手机版暂时还不支持定时发送，后续会加上。")
         "listScheduled" -> JSONArray()
-        "openAttachment", "saveAttachment" -> throw UserError("手机版下一步支持打开附件。")
+        "openAttachment" -> openAttachment(a.getLong(0), a.getInt(1))
+        "saveAttachment" -> saveAttachment(a.getLong(0), a.getInt(1))
         "pickFiles" -> JSONArray()
-        "send" -> throw UserError("手机版下一步支持发信，现在请先用电脑版回复。")
+        "send" -> send(a.getJSONObject(0))
         "suggestContacts" -> suggestContacts(a.optString(0))
         "translate" -> translate(a.getJSONObject(0))
         "getSettings" -> settings()
@@ -506,8 +521,12 @@ class Engine private constructor(private val ctx: Context) {
         Translator.translate(req.getJSONArray("texts").strings(), req.optString("to", "zh"), req.optString("format") == "html", settings())
 
     private fun setSettings(patch: JSONObject): JSONObject {
-        val merged = deepMerge(settings(), patch)
+        val before = settings()
+        val merged = deepMerge(before, patch)
         db.setKv("settings", mapSecrets(merged) { v -> "enc:" + Secrets.encrypt(v) }.toString())
+        if (before.optBoolean("backgroundSync", true) != merged.optBoolean("backgroundSync", true)) {
+            if (merged.optBoolean("backgroundSync", true)) MailService.start(ctx) else MailService.stop(ctx)
+        }
         emit("settings-changed", merged)
         return merged
     }
@@ -515,6 +534,101 @@ class Engine private constructor(private val ctx: Context) {
     private fun openExternal(url: String): Any? {
         if (!Regex("^(https?|mailto):", RegexOption.IGNORE_CASE).containsMatchIn(url)) throw UserError("不支持的链接")
         ctx.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(url)).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK))
+        return null
+    }
+
+    // ======================= 附件 =======================
+    private suspend fun attachmentContent(id: Long, index: Int): AttachmentData {
+        val row = db.messageById(id) ?: throw UserError("邮件不存在")
+        val s = session(row.accountId)
+        return s.onWorker { s.fetchAttachment(row, index) } ?: throw UserError("附件不存在（邮件可能已在服务器上被删除）")
+    }
+
+    private fun safeName(name: String) = name.replace(Regex("[\\\\/:*?\"<>|]"), "_").ifBlank { "附件" }
+
+    private suspend fun openAttachment(id: Long, index: Int): Any? {
+        val a = attachmentContent(id, index)
+        val ext = a.filename.substringAfterLast('.', "").lowercase()
+        if (ext in setOf("apk", "apks", "xapk", "exe", "bat", "cmd", "scr", "js", "vbs", "jar"))
+            throw UserError("为了安全，安装包和可执行文件不能直接打开。可以先“另存为”，确认来源可靠后再自己打开。")
+        val dir = File(ctx.cacheDir, "attachments/$id").apply { mkdirs() }
+        val file = File(dir, safeName(a.filename))
+        file.writeBytes(a.bytes)
+        val uri = FileProvider.getUriForFile(ctx, "${ctx.packageName}.fileprovider", file)
+        val view = Intent(Intent.ACTION_VIEW).setDataAndType(uri, a.contentType).addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+        try {
+            ctx.startActivity(Intent.createChooser(view, "打开附件").addFlags(Intent.FLAG_ACTIVITY_NEW_TASK or Intent.FLAG_GRANT_READ_URI_PERMISSION))
+        } catch (e: ActivityNotFoundException) {
+            throw UserError("手机上没有能打开这种文件的应用，可以先“另存为”。")
+        }
+        return null
+    }
+
+    /** 保存到“下载/Moyer Mail”文件夹 */
+    private suspend fun saveAttachment(id: Long, index: Int): Boolean {
+        val a = attachmentContent(id, index)
+        val name = safeName(a.filename)
+        if (Build.VERSION.SDK_INT >= 29) {
+            val values = ContentValues().apply {
+                put(MediaStore.MediaColumns.DISPLAY_NAME, name)
+                put(MediaStore.MediaColumns.MIME_TYPE, a.contentType)
+                put(MediaStore.MediaColumns.RELATIVE_PATH, Environment.DIRECTORY_DOWNLOADS + "/Moyer Mail")
+            }
+            val uri = ctx.contentResolver.insert(MediaStore.Downloads.EXTERNAL_CONTENT_URI, values) ?: throw UserError("保存失败")
+            ctx.contentResolver.openOutputStream(uri)?.use { it.write(a.bytes) } ?: throw UserError("保存失败")
+        } else {
+            val dir = ctx.getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: throw UserError("保存失败")
+            File(dir, name).writeBytes(a.bytes)
+        }
+        emit("toast", jobj("text" to "已保存到 下载/Moyer Mail", "kind" to "ok"))
+        return false
+    }
+
+    // ======================= 发信 =======================
+    private suspend fun send(d: JSONObject): Any? {
+        val acc = db.getAccount(d.getString("accountId")) ?: throw UserError("发件账号不存在")
+        val accId = acc.getString("id")
+        val recipients = listOf("to", "cc", "bcc").flatMap { d.optJSONArray(it)?.objects() ?: emptyList() }.filter { it.optString("address").isNotBlank() }
+        if (recipients.isEmpty()) throw UserError("请填写收件人")
+        val pass = db.getSecret("$accId:password") ?: throw UserError("缺少授权码/密码，请编辑账号重新填写。")
+        val user = acc.optString("username").ifBlank { acc.getString("email") }
+        // 转发时要带上的原邮件附件，先取下来
+        val forwarded = HashMap<Pair<Long, Int>, AttachmentData>()
+        for (att in d.optJSONArray("attachments")?.objects() ?: emptyList()) {
+            val from = att.optJSONObject("fromMessage") ?: continue
+            val key = from.getLong("id") to from.getInt("index")
+            forwarded[key] = attachmentContent(key.first, key.second)
+        }
+        val msg = try {
+            buildMessage(acc, d) { id, index -> forwarded[id to index] }
+        } catch (e: UserError) {
+            throw e
+        } catch (e: Exception) {
+            throw UserError("邮件生成失败：${friendlyError(e)}")
+        }
+        try {
+            sendMessage(acc, user, pass, msg)
+        } catch (e: Exception) {
+            throw UserError("发送失败：${friendlyError(e)}")
+        }
+        for (r in recipients) db.touchContact(r.optStr("name"), r.optString("address"), 3)
+        val s = sessions[accId]
+        val sent = db.folderByRole(accId, "sent")
+        if (s != null && sent != null) {
+            scope.launch {
+                if (acc.optBoolean("appendSent", true)) {
+                    runCatching { s.onWorker { markSeenForAppend(msg); s.append(sent.path, msg) } }.onFailure { Log.w("MoyerEngine", "append sent", it) }
+                    delay(800)
+                } else delay(4000)
+                s.schedule(sent.path)
+            }
+        }
+        val replyId = if (d.has("replyToLocalId") && !d.isNull("replyToLocalId")) d.getLong("replyToLocalId") else null
+        replyId?.let { db.messageById(it) }?.let { row ->
+            db.exec("UPDATE messages SET answered = 1 WHERE id = ?", listOf(row.id))
+            emit("messages-changed", jobj("accountId" to row.accountId, "folders" to jarr(listOf(row.folder))))
+            sessions[row.accountId]?.let { rs -> scope.launch { runCatching { rs.onWorker { rs.setFlags(row.folder, listOf(row.uid), Flags.Flag.ANSWERED, true) } } } }
+        }
         return null
     }
 }

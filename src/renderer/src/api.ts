@@ -10,19 +10,31 @@ interface Bridge {
   platform: string
 }
 
-interface MailEnginePlugin {
+export interface MailEnginePlugin {
   call(opts: { method: string; args: unknown[] }): Promise<{ result: unknown }>
+  pickFiles(): Promise<{ result: unknown }>
+  requestNotifications(): Promise<{ granted: boolean }>
+  takeLaunchMessage(): Promise<{ id: number | null }>
+  backgroundStatus(): Promise<{ unrestricted: boolean }>
+  openBatterySettings(): Promise<void>
   addListener(event: 'engine-event', cb: (e: { name: string; payload: unknown }) => void): Promise<{ remove: () => Promise<void> }>
 }
 
 /** 安卓版：引擎是原生插件（android/app/src/main/java/com/moyer/mail/engine），接口和电脑版完全一样 */
+const capGlobal = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
+
+/** 安卓 App 里才有的原生插件（选文件、通知权限等也走它） */
+export const nativePlugin: MailEnginePlugin | null = capGlobal?.isNativePlatform?.() ? registerPlugin<MailEnginePlugin>('MailEngine') : null
+
 function capacitorBridge(): Bridge | undefined {
-  const cap = (window as unknown as { Capacitor?: { isNativePlatform?: () => boolean; getPlatform?: () => string } }).Capacitor
-  if (!cap?.isNativePlatform?.()) return undefined
-  const plugin = registerPlugin<MailEnginePlugin>('MailEngine')
+  const cap = capGlobal
+  const plugin = nativePlugin
+  if (!cap || !plugin) return undefined
   return {
     async call(method, ...args) {
       try {
+        // 选文件要打开系统的文件选择器，单独走插件方法
+        if (method === 'pickFiles') return (await plugin.pickFiles()).result
         // undefined 在 JSON 里会丢失，统一转成 null，保证参数位置不错位
         return (await plugin.call({ method, args: args.map((a) => (a === undefined ? null : a)) })).result
       } catch (err) {

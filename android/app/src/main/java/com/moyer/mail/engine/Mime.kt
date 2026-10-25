@@ -38,7 +38,63 @@ private fun readText(p: Part): String = try {
     String(p.inputStream.readBytes(), Charsets.UTF_8)
 }
 
-private fun decodeName(name: String?): String? = name?.let { runCatching { MimeUtility.decodeText(it) }.getOrDefault(it) }
+fun decodeName(name: String?): String? = name?.let { runCatching { MimeUtility.decodeText(it) }.getOrDefault(it) }
+
+private sealed class PartKind {
+    object Html : PartKind()
+    object Text : PartKind()
+    class Inline(val cid: String) : PartKind()
+    class Attachment(val fallbackName: String) : PartKind()
+}
+
+/**
+ * 按固定顺序遍历邮件的每个部件。读信（parseMessage）和取附件（findAttachment）都用它，
+ * 保证附件的编号前后一致。
+ */
+private fun walkParts(msg: Message, visit: (Part, PartKind) -> Unit) {
+    fun walk(p: Part, depth: Int) {
+        if (depth > 12) return
+        when {
+            p.isMimeType("multipart/*") -> {
+                val mp = p.content as? Multipart ?: return
+                for (i in 0 until mp.count) walk(mp.getBodyPart(i), depth + 1)
+            }
+            p.isMimeType("message/rfc822") -> visit(p, PartKind.Attachment("附件#.eml"))
+            else -> {
+                val disp = p.disposition?.lowercase()
+                val isAttachment = disp == Part.ATTACHMENT || decodeName(p.fileName) != null
+                val cid = (p as? MimeBodyPart)?.contentID?.trim('<', '>', ' ')
+                when {
+                    p.isMimeType("text/html") && !isAttachment -> visit(p, PartKind.Html)
+                    p.isMimeType("text/plain") && !isAttachment -> visit(p, PartKind.Text)
+                    p.isMimeType("image/*") && disp != Part.ATTACHMENT && !cid.isNullOrEmpty() -> visit(p, PartKind.Inline(cid))
+                    else -> visit(p, PartKind.Attachment("附件#"))
+                }
+            }
+        }
+    }
+    walk(msg, 0)
+}
+
+class AttachmentData(val filename: String, val contentType: String, val bytes: ByteArray)
+
+/** 按编号取出附件内容（编号和读信时列出的一致） */
+fun findAttachment(msg: Message, index: Int): AttachmentData? {
+    var i = 0
+    var found: AttachmentData? = null
+    walkParts(msg) { p, kind ->
+        if (found != null || kind !is PartKind.Attachment) return@walkParts
+        if (i == index) {
+            found = AttachmentData(
+                filename = decodeName(p.fileName) ?: kind.fallbackName.replace("#", "${i + 1}"),
+                contentType = p.contentType?.substringBefore(';')?.trim()?.lowercase() ?: "application/octet-stream",
+                bytes = p.inputStream.readBytes()
+            )
+        }
+        i++
+    }
+    return found
+}
 
 /** 把一封邮件拆成：HTML 正文、纯文本、内嵌图片（转成 data: 地址）、附件列表 */
 fun parseMessage(msg: Message): ParsedBody {
@@ -47,49 +103,31 @@ fun parseMessage(msg: Message): ParsedBody {
     val inline = HashMap<String, String>()
     val atts = JSONArray()
 
-    fun addAttachment(p: Part, fallbackName: String) {
-        val idx = atts.length()
-        val encoding = (p as? MimeBodyPart)?.encoding?.lowercase()
-        val raw = p.size.toLong()
-        val size = if (raw < 0) 0L else if (encoding == "base64") (raw * 0.74).toLong() else raw
-        atts.put(
-            jobj(
-                "index" to idx,
-                "filename" to (decodeName(p.fileName) ?: fallbackName.replace("#", "${idx + 1}")),
-                "contentType" to (p.contentType?.substringBefore(';')?.trim()?.lowercase() ?: "application/octet-stream"),
-                "size" to size,
-                "inline" to false
-            )
-        )
-    }
-
-    fun walk(p: Part, depth: Int) {
-        if (depth > 12) return
-        when {
-            p.isMimeType("multipart/*") -> {
-                val mp = p.content as? Multipart ?: return
-                for (i in 0 until mp.count) walk(mp.getBodyPart(i), depth + 1)
+    walkParts(msg) { p, kind ->
+        when (kind) {
+            PartKind.Html -> if (html == null) html = readText(p)
+            PartKind.Text -> if (text == null) text = readText(p)
+            is PartKind.Inline -> {
+                val type = p.contentType.substringBefore(';').trim()
+                inline[kind.cid] = "data:$type;base64," + Base64.encodeToString(p.inputStream.readBytes(), Base64.NO_WRAP)
             }
-            p.isMimeType("message/rfc822") -> addAttachment(p, "附件#.eml")
-            else -> {
-                val disp = p.disposition?.lowercase()
-                val name = decodeName(p.fileName)
-                val isAttachment = disp == Part.ATTACHMENT || name != null
-                when {
-                    p.isMimeType("text/html") && !isAttachment -> if (html == null) html = readText(p)
-                    p.isMimeType("text/plain") && !isAttachment -> if (text == null) text = readText(p)
-                    p.isMimeType("image/*") && disp != Part.ATTACHMENT && (p as? MimeBodyPart)?.contentID != null -> {
-                        val cid = (p as MimeBodyPart).contentID.trim('<', '>', ' ')
-                        val type = p.contentType.substringBefore(';').trim()
-                        val data = Base64.encodeToString(p.inputStream.readBytes(), Base64.NO_WRAP)
-                        inline[cid] = "data:$type;base64,$data"
-                    }
-                    else -> addAttachment(p, "附件#")
-                }
+            is PartKind.Attachment -> {
+                val idx = atts.length()
+                val encoding = (p as? MimeBodyPart)?.encoding?.lowercase()
+                val raw = p.size.toLong()
+                val size = if (raw < 0) 0L else if (encoding == "base64") (raw * 0.74).toLong() else raw
+                atts.put(
+                    jobj(
+                        "index" to idx,
+                        "filename" to (decodeName(p.fileName) ?: kind.fallbackName.replace("#", "${idx + 1}")),
+                        "contentType" to (p.contentType?.substringBefore(';')?.trim()?.lowercase() ?: "application/octet-stream"),
+                        "size" to size,
+                        "inline" to false
+                    )
+                )
             }
         }
     }
-    walk(msg, 0)
 
     var finalHtml = html
     if (finalHtml != null) for ((cid, uri) in inline) finalHtml = finalHtml!!.replace("cid:$cid", uri)

@@ -5,6 +5,7 @@ import { PALETTES } from '@shared/theme'
 import type { Settings, TranslateProvider } from '@shared/types'
 import { api, isDemo } from '../api'
 import { errorText, toast, updateSettings, useStore, type SettingsTab } from '../store'
+import { backgroundUnrestricted, isNative, openBatterySettings, requestNotificationPermission } from '../native'
 import { cx } from '../util'
 import { Modal, Segmented, Switch } from './Common'
 import { RulesTab } from './Rules'
@@ -121,9 +122,16 @@ function General({ s }: { s: Settings }) {
         <Switch on={s.loadRemoteImages} onChange={(loadRemoteImages) => updateSettings({ loadRemoteImages })} />
       </Row>
       <h4>同步与通知</h4>
-      <Row title="新邮件桌面通知">
-        <Switch on={s.notifications} onChange={(notifications) => updateSettings({ notifications })} />
+      <Row title={isNative ? '新邮件通知' : '新邮件桌面通知'}>
+        <Switch
+          on={s.notifications}
+          onChange={(notifications) => {
+            void updateSettings({ notifications })
+            if (notifications && isNative) void requestNotificationPermission()
+          }}
+        />
       </Row>
+      {isNative && <AndroidBackground s={s} />}
       <Row title="定时检查其他文件夹" hint="收件箱是实时推送的，这里控制已发送、垃圾邮件等文件夹的检查间隔">
         <select className="select" style={{ width: 120 }} value={s.syncIntervalMin} onChange={(e) => updateSettings({ syncIntervalMin: Number(e.target.value) })}>
           {[1, 2, 5, 10, 15, 30, 60].map((n) => (
@@ -133,13 +141,52 @@ function General({ s }: { s: Settings }) {
           ))}
         </select>
       </Row>
-      <h4>窗口</h4>
-      <Row title="关闭窗口时最小化到托盘" hint="保持后台运行，才能及时收到新邮件通知">
-        <Switch on={s.closeToTray} onChange={(closeToTray) => updateSettings({ closeToTray })} />
+      {!isNative && <h4>窗口</h4>}
+      {!isNative && (
+        <>
+          <Row title="关闭窗口时最小化到托盘" hint="保持后台运行，才能及时收到新邮件通知">
+            <Switch on={s.closeToTray} onChange={(closeToTray) => updateSettings({ closeToTray })} />
+          </Row>
+          <Row title="开机自动启动">
+            <Switch on={s.launchAtLogin} onChange={(launchAtLogin) => updateSettings({ launchAtLogin })} />
+          </Row>
+        </>
+      )}
+    </>
+  )
+}
+
+/** 安卓：后台收信 + 电池优化 */
+function AndroidBackground({ s }: { s: Settings }) {
+  const [unrestricted, setUnrestricted] = useState<boolean | null>(null)
+  useEffect(() => {
+    const check = () => void backgroundUnrestricted().then(setUnrestricted)
+    check()
+    window.addEventListener('focus', check)
+    document.addEventListener('visibilitychange', check)
+    return () => {
+      window.removeEventListener('focus', check)
+      document.removeEventListener('visibilitychange', check)
+    }
+  }, [])
+  const on = s.backgroundSync !== false
+  return (
+    <>
+      <Row title="退到后台后继续收信" hint="关掉 App 也能马上收到新邮件通知。通知栏会常驻一条“正在接收邮件”（可以在系统通知设置里把它折叠）">
+        <Switch on={on} onChange={(backgroundSync) => updateSettings({ backgroundSync })} />
       </Row>
-      <Row title="开机自动启动">
-        <Switch on={s.launchAtLogin} onChange={(launchAtLogin) => updateSettings({ launchAtLogin })} />
-      </Row>
+      {on && (
+        <Row
+          title="允许在后台运行"
+          hint={
+            unrestricted
+              ? '已允许，系统不会为了省电把 Moyer Mail 停掉'
+              : '一加/OPPO 等手机会为了省电停掉后台应用。点右边按钮，在系统弹窗里选“允许”；如果还是收不到，请在系统设置 → 应用 → Moyer Mail 里打开“允许自启动”和“允许后台运行”'
+          }
+        >
+          {unrestricted ? <span className="chip">已允许</span> : <button className="btn soft sm" onClick={openBatterySettings}>去设置</button>}
+        </Row>
+      )}
     </>
   )
 }
@@ -230,7 +277,7 @@ function Translate({ s }: { s: Settings }) {
           ))}
         </select>
       </Row>
-      <Row title="列表里显示外语标题的译文" hint="邮件列表里外语标题直接显示翻译，标有“译”字，鼠标停留可看原文">
+      <Row title="列表里显示外语标题的译文" hint="邮件列表里外语标题直接显示翻译，前面标有“译”字">
         <Switch on={t.listSubjects} onChange={(listSubjects) => setT({ listSubjects })} />
       </Row>
       <Row title="自动翻译外语邮件" hint="打开不是上面这种语言的邮件时，自动翻译">

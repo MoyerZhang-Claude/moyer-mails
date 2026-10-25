@@ -364,6 +364,14 @@ class AccountSession(private val engine: Engine, @Volatile var account: JSONObje
         f.getMessageByUID(r.uid)?.let { parseMessage(it) }
     }
 
+    /** 取出一封邮件的第 index 个附件 */
+    fun fetchAttachment(r: MessageRow, index: Int): AttachmentData? = withFolder(r.folder, Folder.READ_ONLY) { f ->
+        f.getMessageByUID(r.uid)?.let { findAttachment(it, index) }
+    }
+
+    /** 把发出的邮件存一份到“已发送” */
+    fun append(path: String, msg: Message) = withFolder(path, Folder.READ_WRITE) { f -> f.appendMessages(arrayOf(msg)) }
+
     fun setFlags(path: String, uids: List<Long>, flag: Flags.Flag, value: Boolean) = withFolder(path, Folder.READ_WRITE) { f ->
         val msgs = f.getMessagesByUID(uids.toLongArray()).filterNotNull().toTypedArray()
         if (msgs.isNotEmpty()) f.setFlags(msgs, Flags(flag), value)

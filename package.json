@@ -19,7 +19,7 @@
     "web": "vite --config vite.web.config.ts",
     "build:web": "vite build --config vite.web.config.ts",
     "android:sync": "vite build --config vite.web.config.ts && cap sync android",
-    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug"
+    "android:apk": "npm run android:sync && cd android && .\\gradlew.bat assembleDebug"
   },
   "dependencies": {
     "imapflow": "^2.9.1",
