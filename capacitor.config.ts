@@ -6,6 +6,8 @@ const config: CapacitorConfig = {
   appId: 'com.moyer.mail',
   appName: 'Moyer Mail',
   webDir: 'out/web',
+  // 不把每次调用的内容（含邮件正文）打印到系统日志
+  loggingBehavior: 'none',
   android: {
     // 邮件里的图片多是 http 链接，允许混合内容，否则会显示不出来
     allowMixedContent: true
