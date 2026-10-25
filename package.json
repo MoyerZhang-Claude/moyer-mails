@@ -16,7 +16,10 @@
     "dist": "electron-vite build && electron-builder --win --x64",
     "build:core": "vite build --config vite.core.config.ts",
     "test": "vite build --config vite.core.config.ts && node --test tests/engine.test.mjs",
-    "web": "vite --config vite.web.config.ts"
+    "web": "vite --config vite.web.config.ts",
+    "build:web": "vite build --config vite.web.config.ts",
+    "android:sync": "vite build --config vite.web.config.ts && cap sync android",
+    "android:apk": "npm run android:sync && cd android && gradlew.bat assembleDebug"
   },
   "dependencies": {
     "imapflow": "^2.9.1",
@@ -25,6 +28,10 @@
     "socks": "^2.8.10"
   },
   "devDependencies": {
+    "@capacitor/android": "^8.5.3",
+    "@capacitor/app": "^8.1.2",
+    "@capacitor/cli": "^8.5.3",
+    "@capacitor/core": "^8.5.3",
     "@tanstack/react-virtual": "^3.14.22",
     "@types/dompurify": "^3.0.5",
     "@types/mailparser": "^3.9.0",

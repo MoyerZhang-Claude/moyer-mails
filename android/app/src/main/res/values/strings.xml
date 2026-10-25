@@ -1,0 +1,7 @@
+<?xml version='1.0' encoding='utf-8'?>
+<resources>
+    <string name="app_name">Moyer Mail</string>
+    <string name="title_activity_main">Moyer Mail</string>
+    <string name="package_name">com.moyer.mail</string>
+    <string name="custom_url_scheme">com.moyer.mail</string>
+</resources>

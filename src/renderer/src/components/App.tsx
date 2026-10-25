@@ -20,6 +20,7 @@ import {
   toast,
   useStore
 } from '../store'
+import { setSystemBarsDark } from '../native'
 import { debounce } from '../util'
 import { AccountDialog } from './AccountDialog'
 import { ConfirmDialog, ProviderLogo, Toasts } from './Common'
@@ -58,6 +59,7 @@ function useTheme() {
       root.style.setProperty('--orb-b', tone.orbB)
       root.style.setProperty('--on-accent', luminance(tone.accent) > 0.5 ? '#111111' : '#ffffff')
       void api.setWindowTheme(dark, tone.bg).catch(() => undefined)
+      void setSystemBarsDark(dark)
     }
     apply()
     mq.addEventListener('change', apply)

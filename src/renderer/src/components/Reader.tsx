@@ -132,11 +132,11 @@ export const Reader = memo(function Reader() {
           <Archive size={16} />
         </button>
         {isJunk ? (
-          <button className="btn icon" onClick={() => void moveTo('inbox')} title="不是垃圾邮件">
+          <button className="btn icon hide-sm" onClick={() => void moveTo('inbox')} title="不是垃圾邮件">
             <Inbox size={16} />
           </button>
         ) : (
-          <button className="btn icon" onClick={() => void moveTo('junk')} title="标为垃圾邮件">
+          <button className="btn icon hide-sm" onClick={() => void moveTo('junk')} title="标为垃圾邮件">
             <ShieldAlert size={16} />
           </button>
         )}

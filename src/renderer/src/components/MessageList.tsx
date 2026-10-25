@@ -8,7 +8,6 @@ import {
   LoaderCircle,
   Mail,
   MailOpen,
-  Menu,
   Paperclip,
   RefreshCw,
   Search,
@@ -318,9 +317,6 @@ export const MessageList = memo(function MessageList() {
   return (
     <section className="panel glass list-panel">
       <div className="list-head">
-        <button className="btn icon mobile-only" onClick={() => useStore.setState({ sidebarOpen: !useStore.getState().sidebarOpen })}>
-          <Menu size={18} />
-        </button>
         <div className="grow" style={{ minWidth: 0 }}>
           <h2 className="ellipsis">{search ? `搜索“${search}”` : title}</h2>
           <div className="sub">{search ? `找到 ${total} 封` : snoozedView ? `${total} 封，到点会提醒你` : unreadCount ? `${unreadCount} 封未读` : `${total} 封邮件`}</div>
