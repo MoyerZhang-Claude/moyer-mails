@@ -8,8 +8,21 @@ const { SMTPServer } = require('smtp-server')
 
 const d = (h) => new Date(Date.now() - h * 3600_000)
 // hoodiecrow 把 raw 当作“二进制字符串”，所以先转成 UTF-8 字节再交给它
-const mail = (from, subject, html, extra = '') =>
-  Buffer.from(`From: ${from}\r\nTo: Moyer <test@example.com>\r\nSubject: ${subject}\r\nMessage-ID: <${Math.random().toString(36).slice(2)}@example.com>\r\nMIME-Version: 1.0\r\n${extra}Content-Type: text/html; charset=utf-8\r\n\r\n${html}`, 'utf8').toString('binary')
+const mail = (from, subject, html, { id, inReplyTo, to = 'Moyer <test@example.com>' } = {}) =>
+  Buffer.from(
+    [
+      `From: ${from}`,
+      `To: ${to}`,
+      `Subject: ${subject}`,
+      `Message-ID: <${id ?? Math.random().toString(36).slice(2) + '@example.com'}>`,
+      ...(inReplyTo ? [`In-Reply-To: <${inReplyTo}>`, `References: <${inReplyTo}>`] : []),
+      'MIME-Version: 1.0',
+      'Content-Type: text/html; charset=utf-8',
+      '',
+      html
+    ].join('\r\n'),
+    'utf8'
+  ).toString('binary')
 const enc = (s) => `=?UTF-8?B?${Buffer.from(s).toString('base64')}?=`
 
 const inbox = [
@@ -31,9 +44,14 @@ const inbox = [
     internaldate: d(5)
   },
   {
-    raw: mail('"Lukas Becker" <lukas@example.de>', 'Rechnung Nr. 2026-1043', '<p>Sehr geehrter Herr Zhang,</p><p>anbei erhalten Sie die Rechnung für den Monat Oktober. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.</p><p>Mit freundlichen Grüßen<br>Lukas Becker</p>'),
+    raw: mail('"Lukas Becker" <lukas@example.de>', 'Rechnung Nr. 2026-1043', '<p>Sehr geehrter Herr Zhang,</p><p>anbei erhalten Sie die Rechnung für den Monat Oktober. Bitte überweisen Sie den Betrag innerhalb von 14 Tagen.</p><p>Mit freundlichen Grüßen<br>Lukas Becker</p>', { id: 'thread-a@example.de' }),
     flags: ['\\Seen'],
     internaldate: d(26)
+  },
+  {
+    // 会话的第三封：对方回复了我的回复
+    raw: mail('"Lukas Becker" <lukas@example.de>', 'Re: Re: Rechnung Nr. 2026-1043', '<p>Hallo Herr Zhang,</p><p>vielen Dank für die schnelle Antwort! Die Zahlung ist heute bei uns eingegangen.</p><p>Beste Grüße<br>Lukas</p>', { id: 'thread-c@example.de', inReplyTo: 'thread-b@example.com' }),
+    internaldate: d(1)
   },
   {
     raw: mail(`${enc('김민지')} <minji@example.kr>`, enc('자료 공유드립니다'), '<p>안녕하세요, 지난번 회의에서 말씀드린 자료를 공유드립니다. 확인 부탁드립니다.</p>'),
@@ -49,7 +67,21 @@ const imap = hoodiecrow({
     '': {
       separator: '/',
       folders: {
-        Sent: { 'special-use': '\\Sent' },
+        Sent: {
+          'special-use': '\\Sent',
+          messages: [
+            {
+              // 会话的第二封：我的回复
+              raw: mail('Moyer <test@example.com>', 'Re: Rechnung Nr. 2026-1043', '<p>Hallo Herr Becker,</p><p>danke, ich überweise den Betrag heute.</p><p>Viele Grüße<br>Moyer</p>', {
+                id: 'thread-b@example.com',
+                inReplyTo: 'thread-a@example.de',
+                to: 'Lukas Becker <lukas@example.de>'
+              }),
+              flags: ['\\Seen'],
+              internaldate: d(25)
+            }
+          ]
+        },
         Drafts: { 'special-use': '\\Drafts' },
         Trash: { 'special-use': '\\Trash' },
         Archive: { 'special-use': '\\Archive' },

@@ -7,7 +7,7 @@ export const DEFAULT_SETTINGS: Settings = {
   palette: 'mist',
   orbs: true,
   density: 'comfortable',
-  threading: false,
+  threading: true,
   loadRemoteImages: true,
   markReadOnOpen: true,
   notifications: true,
@@ -81,6 +81,12 @@ export class SettingsStore {
     this.current = deepMerge(DEFAULT_SETTINGS, stored)
     // 旧版本里的“微软免费接口”已经失效，自动换成 Google
     if (!['google', 'azure', 'llm', 'deepl'].includes(this.current.translate.provider)) this.current.translate.provider = 'google'
+    // v0.2.0 的会话界面还没做好，当时强制关闭了会话分组；升级上来时打开一次
+    if (raw && db.getKv('settings_rev') !== '2') {
+      this.current = { ...this.current, threading: true }
+      db.setKv('settings_rev', '2')
+      this.update({})
+    } else if (!raw) db.setKv('settings_rev', '2')
   }
 
   get(): Settings {

@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import {
   Bold,
+  CalendarClock,
   ChevronDown,
   Italic,
   Languages,
@@ -19,10 +20,11 @@ import {
 } from 'lucide-react'
 import { LANGS, langName, normalizeLang } from '@shared/langs'
 import { api, pathForFile } from '../api'
-import { closeComposer, confirmDialog, errorText, saveDrafts, toast, updateComposer, useStore, type ComposerState } from '../store'
+import { closeComposer, confirmDialog, errorText, formatWhen, saveDrafts, toast, updateComposer, useStore, type ComposerState } from '../store'
 import { translateElement, unwrapMarkers } from '../translate-dom'
 import { cx, debounce, formatSize, isValidEmail } from '../util'
 import { RecipientInput } from './RecipientInput'
+import { sendPresets, TimeMenu } from './TimeMenu'
 
 const TITLES = { new: '写邮件', reply: '回复', replyAll: '全部回复', forward: '转发' }
 const saveDraftsSoon = debounce(saveDrafts, 800)
@@ -54,6 +56,7 @@ function Composer({ c }: { c: ComposerState }) {
   const trEditor = useRef<HTMLDivElement>(null)
   const [showCc, setShowCc] = useState(c.cc.length > 0 || c.bcc.length > 0)
   const [sending, setSending] = useState(false)
+  const [scheduleAt, setScheduleAt] = useState<{ left: number; bottom: number } | null>(null)
   const [dragging, setDragging] = useState(false)
   const [linkBox, setLinkBox] = useState<{ url: string; range: Range | null } | null>(null)
   const defaultLang = (() => {
@@ -101,7 +104,8 @@ function Composer({ c }: { c: ComposerState }) {
     closeComposer(c.id)
   }
 
-  const send = async () => {
+  /** sendAt 有值时是定时发送 */
+  const send = async (sendAt?: number) => {
     const st = useStore.getState().composers.find((x) => x.id === c.id) ?? c
     const all = [...st.to, ...st.cc, ...st.bcc]
     if (!all.length) return toast('请填写收件人', 'error')
@@ -115,7 +119,7 @@ function Composer({ c }: { c: ComposerState }) {
     const html = `<div style="font-family:'Microsoft YaHei','PingFang SC',Arial,sans-serif;font-size:14px;line-height:1.6">${body}${quote}</div>`
     setSending(true)
     try {
-      await api.send({
+      const draft = {
         accountId: st.accountId,
         to: st.to,
         cc: st.cc,
@@ -127,9 +131,16 @@ function Composer({ c }: { c: ComposerState }) {
         inReplyTo: st.inReplyTo,
         references: st.references,
         replyToLocalId: st.replyToLocalId
-      })
-      closeComposer(c.id)
-      toast('已发送', 'ok')
+      }
+      if (sendAt) {
+        await api.scheduleSend(draft, sendAt)
+        closeComposer(c.id)
+        toast(`将在 ${formatWhen(sendAt)} 发送，可以在侧栏“定时发送”里修改`, 'ok')
+      } else {
+        await api.send(draft)
+        closeComposer(c.id)
+        toast('已发送', 'ok')
+      }
     } catch (err) {
       toast(errorText(err), 'error')
     } finally {
@@ -417,10 +428,30 @@ function Composer({ c }: { c: ComposerState }) {
         )}
 
         <div className="composer-foot">
-          <button className="btn primary" onClick={send} disabled={sending} title="发送 (Ctrl+Enter)" style={{ minWidth: 92 }}>
+          <button className="btn primary" onClick={() => void send()} disabled={sending} title="发送 (Ctrl+Enter)" style={{ minWidth: 92 }}>
             {sending ? <LoaderCircle size={16} className="spin" /> : <Send size={16} />}
             {sending ? '发送中' : '发送'}
           </button>
+          <button
+            className="btn icon"
+            title="定时发送"
+            disabled={sending}
+            onClick={(e) => {
+              const r = (e.currentTarget as HTMLElement).getBoundingClientRect()
+              setScheduleAt({ left: r.left, bottom: window.innerHeight - r.top + 6 })
+            }}
+          >
+            <CalendarClock size={17} />
+          </button>
+          {scheduleAt && (
+            <TimeMenu
+              title="定时发送"
+              presets={sendPresets()}
+              style={{ position: 'fixed', left: scheduleAt.left, bottom: scheduleAt.bottom }}
+              onPick={(ts) => void send(ts)}
+              onClose={() => setScheduleAt(null)}
+            />
+          )}
           <button className="btn icon" title="添加附件" onClick={pick}>
             <Paperclip size={17} />
           </button>

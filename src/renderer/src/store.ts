@@ -59,7 +59,7 @@ export interface Toast {
   kind: 'info' | 'ok' | 'error'
 }
 
-export type SettingsTab = 'appearance' | 'general' | 'translate' | 'network' | 'accounts' | 'oauth' | 'about'
+export type SettingsTab = 'appearance' | 'general' | 'translate' | 'rules' | 'network' | 'accounts' | 'oauth' | 'about'
 
 export type Dialog =
   | null

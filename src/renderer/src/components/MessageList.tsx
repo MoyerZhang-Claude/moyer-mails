@@ -16,6 +16,7 @@ import {
   ShieldAlert,
   Star,
   Trash2,
+  Wand,
   X
 } from 'lucide-react'
 import { detectLang, normalizeLang } from '@shared/langs'
@@ -66,8 +67,13 @@ export function useViewTitle(view: ViewKey): string {
 // ---------- 列表里的外语标题翻译 ----------
 const subjectTr = new Map<string, string>()
 
+/** 去掉 Re: / Fwd: 前缀（会话数已经说明是往来邮件，译文里不用再显示“回复：回复：”） */
+function stripReply(subject: string) {
+  return subject.replace(/^\s*((re|fwd?|fw|aw|wg|sv|回复|答复|转发)\s*[:：]\s*)+/i, '').trim()
+}
+
 function needsTranslation(subject: string, target: string): boolean {
-  const plain = subject.replace(/^\s*((re|fwd?|aw|wg)\s*:\s*)+/i, '').replace(/\[[^\]]*\]/g, ' ')
+  const plain = stripReply(subject).replace(/\[[^\]]*\]/g, ' ')
   if ((plain.match(/\p{L}/gu) ?? []).length < 4) return false
   const lang = normalizeLang(detectLang(plain))
   if (!lang) return false
@@ -85,10 +91,10 @@ function useSubjectTranslations(rows: MessageSummary[], enabled: boolean, target
     const t = setTimeout(async () => {
       for (const s of need) subjectTr.set(`${target}\n${s}`, '')
       try {
-        const r = await api.translate({ texts: need, to: target })
+        const r = await api.translate({ texts: need.map(stripReply), to: target })
         need.forEach((s, i) => {
           const tr = (r.texts[i] ?? '').trim()
-          subjectTr.set(`${target}\n${s}`, tr && tr.toLowerCase() !== s.trim().toLowerCase() ? tr : '')
+          subjectTr.set(`${target}\n${s}`, tr && tr.toLowerCase() !== stripReply(s).toLowerCase() ? tr : '')
         })
         bump((x) => x + 1)
       } catch {
@@ -256,6 +262,23 @@ export const MessageList = memo(function MessageList() {
         : { label: '标为垃圾邮件', icon: <ShieldAlert size={15} />, onClick: () => void moveTo('junk', ids) },
       { label: m.role === 'trash' ? '彻底删除' : '删除', icon: <Trash2 size={15} />, danger: true, onClick: () => void moveTo('trash', ids) }
     ]
+    if (m.from?.address && m.role !== 'sent') {
+      items.push('sep', {
+        label: '自动处理此发件人的邮件…',
+        icon: <Wand size={15} />,
+        onClick: () =>
+          useStore.setState({
+            dialog: {
+              kind: 'rule',
+              preset: {
+                name: `来自 ${displayName(m.from)}`,
+                accountId: m.accountId,
+                conditions: [{ field: 'from', op: 'contains', value: m.from!.address }]
+              }
+            }
+          })
+      })
+    }
     return items
   }
 

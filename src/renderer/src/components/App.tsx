@@ -26,6 +26,8 @@ import { ConfirmDialog, ProviderLogo, Toasts } from './Common'
 import { Composers } from './Composer'
 import { MessageList } from './MessageList'
 import { Reader } from './Reader'
+import { RuleDialog } from './Rules'
+import { ScheduledDialog } from './Scheduled'
 import { SettingsDialog } from './SettingsDialog'
 import { Sidebar } from './Sidebar'
 
@@ -147,6 +149,7 @@ function useShortcuts(searchRef: React.RefObject<HTMLInputElement | null>) {
         Delete: () => void moveTo('trash'),
         '#': () => void moveTo('trash'),
         t: () => window.dispatchEvent(new Event('moyer:translate')),
+        h: () => st.selectedId != null && window.dispatchEvent(new Event('moyer:snooze')),
         '/': () => {
           searchRef.current?.focus()
         },
@@ -271,6 +274,8 @@ function Dialogs() {
   if (!dialog) return null
   if (dialog.kind === 'account') return <AccountDialog key={dialog.accountId ?? dialog.provider ?? 'new'} accountId={dialog.accountId} provider={dialog.provider} />
   if (dialog.kind === 'settings') return <SettingsDialog tab={dialog.tab} />
+  if (dialog.kind === 'rule') return <RuleDialog rule={dialog.rule} preset={dialog.preset} />
+  if (dialog.kind === 'scheduled') return <ScheduledDialog />
   return <ConfirmDialog />
 }
 
@@ -286,6 +291,16 @@ export function App() {
   }, [])
   useTheme()
   useEngineEvents()
+  // 切换“按会话分组”后重新加载列表
+  const threading = useStore((s) => s.settings?.threading)
+  const firstThreading = useRef(true)
+  useEffect(() => {
+    if (firstThreading.current) {
+      firstThreading.current = false
+      return
+    }
+    void refreshList(true)
+  }, [threading])
   useShortcuts(searchRef)
 
   return (

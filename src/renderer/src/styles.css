@@ -2034,3 +2034,153 @@ code {
   cursor: default !important;
   background: none !important;
 }
+
+/* ============ 会话视图 ============ */
+.subject-tr {
+  font-size: 15px;
+  font-weight: 500;
+  color: var(--text-2);
+  margin-top: 4px;
+}
+
+.thread {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.thread-card {
+  border-radius: var(--radius-lg);
+  background: color-mix(in srgb, var(--glass-solid) 55%, transparent);
+  border: 1px solid var(--line);
+  padding: 14px 14px 12px;
+}
+
+.thread-card .sender {
+  margin-bottom: 12px;
+}
+
+.thread-card.collapsed {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 14px;
+  cursor: pointer;
+  transition:
+    background-color 0.1s,
+    transform 0.1s;
+}
+
+.thread-card.collapsed:hover {
+  background: var(--hover);
+}
+
+.thread-card.collapsed:active {
+  transform: scale(0.995);
+  transition-duration: 0s;
+}
+
+.tc-name {
+  font-weight: 550;
+  flex-shrink: 0;
+  max-width: 160px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.tc-name.unread {
+  font-weight: 700;
+}
+
+.tc-snippet {
+  flex: 1;
+  min-width: 0;
+  color: var(--text-3);
+  font-size: 12.5px;
+}
+
+.tc-date {
+  flex-shrink: 0;
+  color: var(--text-3);
+  font-size: 12px;
+}
+
+.sender.clickable {
+  cursor: pointer;
+  border-radius: var(--radius-sm);
+}
+
+.card-actions {
+  gap: 6px;
+  margin-top: 12px;
+  flex-wrap: wrap;
+}
+
+.thread-fold {
+  align-self: center;
+  border: 1px dashed var(--line);
+  background: transparent;
+  color: var(--text-2);
+  border-radius: 14px;
+  padding: 4px 14px;
+  font-size: 12.5px;
+  cursor: pointer;
+  transition: background-color 0.1s;
+}
+
+.thread-fold:hover {
+  background: var(--hover);
+}
+
+.thread-fold:active {
+  transform: scale(0.97);
+}
+
+/* ============ 收信规则 / 定时发送 ============ */
+.rule-editor {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+}
+
+.rule-conds {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 10px;
+  border-radius: var(--radius);
+  background: var(--hover);
+}
+
+.rule-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px 18px;
+}
+
+.check {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  cursor: pointer;
+  font-size: 13px;
+  color: var(--text) !important;
+  font-weight: 400 !important;
+}
+
+.check input {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
+
+.scheduled-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 10px 2px;
+  border-bottom: 1px solid var(--line);
+}

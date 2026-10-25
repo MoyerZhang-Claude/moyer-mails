@@ -194,7 +194,7 @@ let settings: Settings = {
   palette: 'mist',
   orbs: true,
   density: 'comfortable',
-  threading: false,
+  threading: true,
   loadRemoteImages: true,
   markReadOnOpen: true,
   notifications: true,

@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react'
-import { ArrowDown, ArrowUp, Bell, Globe, Info, KeyRound, Languages, LoaderCircle, Palette, Pencil, Plus, Users, Wifi } from 'lucide-react'
+import { ArrowDown, ArrowUp, Bell, Globe, Info, KeyRound, Languages, LoaderCircle, Palette, Pencil, Plus, Users, Wand, Wifi } from 'lucide-react'
 import { LANGS } from '@shared/langs'
 import { PALETTES } from '@shared/theme'
 import type { Settings, TranslateProvider } from '@shared/types'
@@ -7,11 +7,13 @@ import { api, isDemo } from '../api'
 import { errorText, toast, updateSettings, useStore, type SettingsTab } from '../store'
 import { cx } from '../util'
 import { Modal, Segmented, Switch } from './Common'
+import { RulesTab } from './Rules'
 
 const TABS: { id: SettingsTab; label: string; icon: ReactNode }[] = [
   { id: 'appearance', label: '外观', icon: <Palette size={16} /> },
   { id: 'general', label: '通用', icon: <Bell size={16} /> },
   { id: 'translate', label: '翻译', icon: <Languages size={16} /> },
+  { id: 'rules', label: '收信规则', icon: <Wand size={16} /> },
   { id: 'accounts', label: '邮箱账号', icon: <Users size={16} /> },
   { id: 'network', label: '网络代理', icon: <Wifi size={16} /> },
   { id: 'oauth', label: '账号登录', icon: <KeyRound size={16} /> },
@@ -90,6 +92,9 @@ function Appearance({ s }: { s: Settings }) {
       </div>
       <Row title="背景柔光" hint="在纯色背景上加几团柔和的光斑，让磨砂玻璃效果更明显">
         <Switch on={s.orbs} onChange={(orbs) => updateSettings({ orbs })} />
+      </Row>
+      <Row title="按会话分组" hint="同一话题的往来邮件（包括你的回复）合并成一行，打开后按时间顺序排列">
+        <Switch on={s.threading} onChange={(threading) => updateSettings({ threading })} />
       </Row>
       <Row title="列表密度">
         <Segmented
@@ -424,6 +429,8 @@ function About() {
         <span>星标</span>
         <kbd>U</kbd>
         <span>标为已读/未读</span>
+        <kbd>H</kbd>
+        <span>稍后提醒</span>
         <kbd>E</kbd>
         <span>归档</span>
         <kbd>Delete</kbd>
@@ -458,6 +465,7 @@ export function SettingsDialog({ tab: initial }: { tab?: SettingsTab }) {
           {tab === 'appearance' && <Appearance s={settings} />}
           {tab === 'general' && <General s={settings} />}
           {tab === 'translate' && <Translate s={settings} />}
+          {tab === 'rules' && <RulesTab />}
           {tab === 'network' && <Network s={settings} />}
           {tab === 'accounts' && <Accounts />}
           {tab === 'oauth' && <OAuth s={settings} />}
