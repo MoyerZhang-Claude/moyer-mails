@@ -1902,6 +1902,10 @@ code {
   display: none !important;
 }
 
+.drawer-scrim {
+  display: none;
+}
+
 @media (max-width: 1100px) {
   :root {
     --list-w: 330px;
@@ -1928,6 +1932,40 @@ code {
 
   .sidebar.open {
     transform: none;
+  }
+
+  /* 侧栏打开时后面的遮罩；滑动开关侧栏时透明度跟着手指变（gestures.ts） */
+  .drawer-scrim {
+    display: block;
+    position: fixed;
+    inset: 0;
+    z-index: 34;
+    background: rgba(10, 14, 22, 0.2);
+    opacity: 0;
+    visibility: hidden;
+    transition:
+      opacity 0.16s ease-out,
+      visibility 0s linear 0.16s;
+  }
+
+  .dark .drawer-scrim {
+    background: rgba(0, 0, 0, 0.4);
+  }
+
+  .drawer-scrim.show {
+    opacity: 1;
+    visibility: visible;
+    transition: opacity 0.16s ease-out;
+  }
+
+  /* 列表和侧栏只让浏览器处理上下滚动，横向滑动交给 gestures.ts 开关侧栏
+     （否则浏览器会先把手势当成滚动接走，慢慢滑的时候侧栏时灵时不灵） */
+  .list-panel,
+  .list-scroll,
+  .sidebar,
+  .sidebar .nav,
+  .drawer-scrim {
+    touch-action: pan-y;
   }
 
   .mobile-only {

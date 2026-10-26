@@ -20,6 +20,7 @@ import {
   toast,
   useStore
 } from '../store'
+import { setupDrawerSwipe } from '../gestures'
 import { setSystemBarsDark } from '../native'
 import { debounce } from '../util'
 import { AccountDialog } from './AccountDialog'
@@ -304,6 +305,8 @@ export function App() {
     void refreshList(true)
   }, [threading])
   useShortcuts(searchRef)
+  // 手机上右滑打开侧栏、左滑关闭
+  useEffect(() => setupDrawerSwipe(), [])
 
   return (
     <>
@@ -320,6 +323,8 @@ export function App() {
         <TitleBar searchRef={searchRef} />
         {ready && (
           <main className="main" onMouseDown={(e) => sidebarOpen && !(e.target as HTMLElement).closest('.sidebar') && useStore.setState({ sidebarOpen: false })}>
+            {/* 窄屏时侧栏后面的半透明遮罩，点一下关闭侧栏 */}
+            <div className={sidebarOpen ? 'drawer-scrim show' : 'drawer-scrim'} />
             <Sidebar />
             {hasAccounts ? (
               <>
