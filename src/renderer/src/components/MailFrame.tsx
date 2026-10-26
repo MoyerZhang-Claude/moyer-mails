@@ -1,6 +1,7 @@
 import { forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState } from 'react'
 import DOMPurify from 'dompurify'
 import { Copy, Languages, LoaderCircle } from 'lucide-react'
+import { attachSwipe } from '../gestures'
 import { openComposer, toast, useStore } from '../store'
 import { translateElement, translateText, type TranslateProgress } from '../translate-dom'
 import { parseAddressInput, textToHtml } from '../util'
@@ -70,6 +71,8 @@ export const MailFrame = forwardRef<MailFrameHandle, { html: string | null; text
     if (!f || !d?.documentElement) return
     const h = Math.max(d.documentElement.scrollHeight, d.body?.scrollHeight ?? 0)
     f.style.height = `${h + 2}px`
+    // 手机上在正文里右滑也能拉出侧栏（图片加载完宽度可能变，所以每次重新量）
+    attachSwipe(d)
   }, [])
 
   const roRef = useRef<ResizeObserver | null>(null)

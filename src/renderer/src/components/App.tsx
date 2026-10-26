@@ -20,7 +20,7 @@ import {
   toast,
   useStore
 } from '../store'
-import { setupDrawerSwipe } from '../gestures'
+import { setupGestures } from '../gestures'
 import { setSystemBarsDark } from '../native'
 import { debounce } from '../util'
 import { AccountDialog } from './AccountDialog'
@@ -305,8 +305,8 @@ export function App() {
     void refreshList(true)
   }, [threading])
   useShortcuts(searchRef)
-  // 手机上右滑打开侧栏、左滑关闭
-  useEffect(() => setupDrawerSwipe(), [])
+  // 手机上右滑打开侧栏（读信时也可以）、左滑关闭
+  useEffect(() => setupGestures(), [])
 
   return (
     <>
