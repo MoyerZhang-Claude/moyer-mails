@@ -25,6 +25,10 @@ android {
     }
     buildTypes {
         release {
+            // 正式版（发布到 GitHub 的 APK）：不可调试，WebView 远程调试也关掉。
+            // 暂时用本机的调试签名（%USERPROFILE%\.android\debug.keystore），这样能直接覆盖安装手机上的开发版，数据不丢。
+            // 换电脑打包前要把这个文件拷过去，否则签名不同，手机上只能卸载重装。
+            signingConfig signingConfigs.debug
             minifyEnabled false
             proguardFiles getDefaultProguardFile('proguard-android.txt'), 'proguard-rules.pro'
         }

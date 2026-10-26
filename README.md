@@ -9,9 +9,15 @@
 
 ## 安装
 
-到 [Releases 发布页](https://github.com/MoyerZhang-Claude/moyer-mails/releases/latest) 下载 `MoyerMail-Setup-x.x.x.exe`，双击安装（Windows 10/11）。安装包没有数字签名，Windows 可能提示“未知发布者”，点“更多信息 → 仍要运行”即可。
+**电脑（Windows 10/11）**：到 [Releases 发布页](https://github.com/MoyerZhang-Claude/moyer-mails/releases/latest) 下载 `MoyerMail-Setup-x.x.x.exe`，双击安装。安装包没有数字签名，Windows 可能提示“未知发布者”，点“更多信息 → 仍要运行”即可。
 
 关闭窗口时软件会缩到右下角托盘继续收信；要彻底退出，右键托盘图标 → 退出。
+
+**安卓手机（Android 7.0 及以上）**：到 [全部发布](https://github.com/MoyerZhang-Claude/moyer-mails/releases) 里找“安卓版”，在手机上下载 `MoyerMail-Android-x.x.x.apk` 点开安装。第一次安装时系统会提示“允许安装未知应用”，按提示允许即可；一加 / OPPO 等手机可能要求“扫描”或提示“未经检测”，选继续安装。之后的新版本直接覆盖安装，账号不会丢。
+
+- 想关掉 App 也能马上收到新邮件、定时邮件和稍后提醒按时处理：设置 → 通用 → 打开“退到后台后继续收信”，并点“允许在后台运行”。
+- 在列表或读信界面右滑拉出侧栏，左滑收起；返回用手机自带的返回手势。
+- Outlook 在手机上同样要先在 设置 → 账号登录 填写微软应用 ID（和电脑版用同一个）。
 
 ## 添加邮箱
 
@@ -51,7 +57,10 @@ npm run dev        # 开发模式（热更新）
 npm test           # 引擎自动化测试（本机假 IMAP/SMTP 服务器）
 npm run web        # 只在浏览器里看界面（演示数据）
 npm run dist       # 打包 Windows 安装程序到 dist/
+npm run android:apk  # 打包安卓开发版 APK（需要 JAVA_HOME 指向 JDK 21、ANDROID_HOME 指向 Android SDK）
 ```
+
+安卓正式版：先 `npm run android:sync`，再在 `android/` 里运行 `gradlew assembleRelease`，生成 `android/app/build/outputs/apk/release/app-release.apk`（不可调试；签名说明见 `android/app/build.gradle`）。安卓版的界面和电脑版共用，收发信引擎是 `android/` 里用 Kotlin 重写的一份，开发记录见 [docs/进度.md](docs/进度.md)。
 
 本地调试真实收发流程：`node tests/fake-servers.mjs` 会启动假的 IMAP（127.0.0.1:1143）和 SMTP（127.0.0.1:1025），用户名 `testuser`、密码 `testpass`，在软件里选“其他邮箱”、加密方式选 STARTTLS 即可连上（自签名证书，需要设置环境变量 `NODE_TLS_REJECT_UNAUTHORIZED=0` 启动）。
 
@@ -64,7 +73,8 @@ src/shared/    界面与引擎共用：类型、MailApi 接口、服务商预设
 src/core/      收发信引擎（纯 Node）：同步、发信、OAuth、翻译、数据库
 src/main/      Electron 主进程：窗口、托盘、通知、IPC
 src/preload/   安全桥
-src/renderer/  React 界面
+src/renderer/  React 界面（电脑版和安卓版共用）
+android/       安卓工程（Capacitor）：app/src/main/java/com/moyer/mail/engine/ 是 Kotlin 收发信引擎
 tests/         引擎端到端测试、假邮件服务器
-scripts/       图标生成
+scripts/       图标生成、安卓调试工具
 ```
