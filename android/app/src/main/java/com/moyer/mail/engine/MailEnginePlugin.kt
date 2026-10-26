@@ -55,6 +55,8 @@ class MailEnginePlugin : Plugin() {
         super.handleOnResume()
         engine.appVisible = true
         Notifier.clearMail(context)
+        // 后台被系统冻结期间到点的提醒和定时邮件，一打开就处理
+        engine.scope.launch { runCatching { engine.tick() } }
     }
 
     override fun handleOnPause() {

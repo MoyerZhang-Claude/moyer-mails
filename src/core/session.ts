@@ -481,10 +481,19 @@ export class AccountSession {
     const lock = await c.getMailboxLock(path)
     const batch: NewMessage[] = []
     try {
-      if (known[0] <= 1) return 0
-      const older = await c.search({ uid: `1:${known[0] - 1}` }, { uid: true })
-      if (!Array.isArray(older) || !older.length) return 0
-      const pick = older.sort((a, b) => a - b).slice(-OLDER_BATCH)
+      // 取“本地还没有的最新 OLDER_BATCH 封”：只看最新的 (本地数量 + OLDER_BATCH) 封的 UID 就够了，
+      // 这样服务器搜索单独拉下来的旧邮件留下的空档也会被补上
+      const exists = c.mailbox ? c.mailbox.exists : 0
+      if (!exists) return 0
+      const from = Math.max(1, exists - known.length - OLDER_BATCH + 1)
+      const uids = await c.search({ seq: `${from}:*` }, { uid: true })
+      if (!Array.isArray(uids) || !uids.length) return 0
+      const have = new Set(known)
+      const pick = uids
+        .filter((u) => !have.has(u))
+        .sort((a, b) => a - b)
+        .slice(-OLDER_BATCH)
+      if (!pick.length) return 0
       for await (const m of c.fetch(pick.join(','), FETCH_QUERY, { uid: true })) {
         batch.push(messageFromFetch(this.id, path, folder.role as FolderRole, m))
       }

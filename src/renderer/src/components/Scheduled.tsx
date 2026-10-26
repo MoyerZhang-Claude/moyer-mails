@@ -5,6 +5,7 @@ import { api } from '../api'
 import { confirmDialog, errorText, formatWhen, openComposer, toast, useStore } from '../store'
 import { displayName } from '../util'
 import { Modal } from './Common'
+import { isNative } from '../native'
 
 /** 侧栏“定时发送”：查看、立即发送、修改或取消 */
 export function ScheduledDialog() {
@@ -117,7 +118,11 @@ export function ScheduledDialog() {
             )
           })
         )}
-        <div className="hint">软件需要开着（可以缩在托盘里）才能按时发出。</div>
+        <div className="hint">
+          {isNative
+            ? '要在关掉 App 后也按时发出，请在 设置 → 通用 里打开“退到后台后继续收信”；否则会在下次打开 Moyer Mail 时发出。'
+            : '软件需要开着（可以缩在托盘里）才能按时发出。'}
+        </div>
       </div>
     </Modal>
   )

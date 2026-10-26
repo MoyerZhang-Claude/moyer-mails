@@ -47,7 +47,9 @@ data class MessageRow(
     val hasAtt: Boolean,
     val size: Long,
     val snippet: String,
-    val bodyState: Int
+    val bodyState: Int,
+    val threadKey: String?,
+    val snoozeUntil: Long?
 ) {
     fun toSummary(): JSONObject = jobj(
         "id" to id, "accountId" to accountId, "folder" to folder, "role" to role, "uid" to uid, "messageId" to messageId,
@@ -55,9 +57,19 @@ data class MessageRow(
         "from" to (if (fromAddr != null || fromName != null) addrJson(fromName, fromAddr) else null),
         "to" to JSONArray(toJson), "cc" to JSONArray(ccJson),
         "date" to date, "seen" to seen, "flagged" to flagged, "answered" to answered, "hasAttachments" to hasAtt,
-        "snippet" to snippet, "size" to size, "snoozeUntil" to null
+        "snippet" to snippet, "size" to size, "snoozeUntil" to snoozeUntil
     )
 }
+
+private val REPLY_PREFIXES = Regex("^\\s*((re|fw|fwd|aw|wg|sv|vs|antw|tr|rif|回复|答复|回覆|转发|轉寄|转寄)\\s*(\\[\\d+]|\\(\\d+\\))?\\s*[:：]\\s*)+", RegexOption.IGNORE_CASE)
+private val REPLY_ONLY = Regex("^\\s*(re|aw|sv|vs|antw|回复|答复|回覆)\\s*(\\[\\d+]|\\(\\d+\\))?\\s*[:：]", RegexOption.IGNORE_CASE)
+
+/** 去掉“回复：”“Fwd:”等前缀，用来判断是不是同一个话题 */
+fun normalizeSubject(s: String): String = s.replace(REPLY_PREFIXES, "").replace(Regex("\\s+"), " ").trim().lowercase()
+
+fun isReplySubject(s: String): Boolean = REPLY_ONLY.containsMatchIn(s)
+
+private const val DB_VERSION = 2
 
 data class NewMessage(
     val accountId: String,
@@ -80,7 +92,7 @@ data class NewMessage(
 )
 
 /** 本地数据库：账号、文件夹、邮件信头、正文缓存。结构和电脑版基本一致（没有全文索引，搜索用 LIKE） */
-class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, 1) {
+class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, DB_VERSION) {
 
     override fun onCreate(db: SQLiteDatabase) {
         db.execSQL("CREATE TABLE kv (key TEXT PRIMARY KEY, value TEXT NOT NULL)")
@@ -111,10 +123,71 @@ class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, 1)
               attachments_json TEXT NOT NULL DEFAULT '[]', lang TEXT)"""
         )
         db.execSQL("CREATE TABLE contacts (address TEXT PRIMARY KEY, name TEXT, score INTEGER NOT NULL DEFAULT 0, last_used INTEGER NOT NULL DEFAULT 0)")
+        upgrade(db, 1)
     }
 
-    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) {
-        // 以后改结构时在这里按版本追加升级步骤，不要删表
+    override fun onUpgrade(db: SQLiteDatabase, oldVersion: Int, newVersion: Int) = upgrade(db, oldVersion)
+
+    /**
+     * 数据库升级：每一步把版本号加一。只能往后追加，已经发布的步骤不要再改。
+     * （安卓会把整个升级放在一个事务里，失败会自动回滚，旧数据不会坏）
+     */
+    private fun upgrade(db: SQLiteDatabase, from: Int) {
+        // v2：邮件会话、稍后提醒、定时发送、收信规则
+        if (from < 2) {
+            val cols = db.rawQuery("PRAGMA table_info(messages)", null).use { c -> buildSet { while (c.moveToNext()) add(c.getString(1)) } }
+            if ("thread_key" !in cols) db.execSQL("ALTER TABLE messages ADD COLUMN thread_key TEXT")
+            if ("subject_norm" !in cols) db.execSQL("ALTER TABLE messages ADD COLUMN subject_norm TEXT")
+            if ("snooze_until" !in cols) db.execSQL("ALTER TABLE messages ADD COLUMN snooze_until INTEGER")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_msg_thread ON messages (account_id, thread_key)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_msg_mid ON messages (account_id, message_id)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_msg_irt ON messages (account_id, in_reply_to)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_msg_subj ON messages (account_id, subject_norm)")
+            db.execSQL("CREATE INDEX IF NOT EXISTS idx_msg_snooze ON messages (snooze_until)")
+            db.execSQL(
+                """CREATE TABLE IF NOT EXISTS outbox (
+                  id INTEGER PRIMARY KEY AUTOINCREMENT, account_id TEXT NOT NULL, draft_json TEXT NOT NULL,
+                  send_at INTEGER NOT NULL, status TEXT NOT NULL DEFAULT 'pending', error TEXT, created INTEGER NOT NULL)"""
+            )
+            db.execSQL("CREATE TABLE IF NOT EXISTS rules (id TEXT PRIMARY KEY, json TEXT NOT NULL, sort INTEGER NOT NULL DEFAULT 0)")
+            // 给已有邮件补上会话编号（按时间从旧到新）
+            db.rawQuery("SELECT id, account_id, message_id, in_reply_to, subject, date FROM messages ORDER BY date ASC", null).use { c ->
+                while (c.moveToNext()) assignThread(db, c.getLong(0), c.getString(1), c.getString(2), c.getString(3), c.getString(4) ?: "", c.getLong(5))
+            }
+        }
+    }
+
+    /** 给一封邮件分配会话编号（和电脑版 db.ts 的 assignThread 一样的规则） */
+    private fun assignThread(db: SQLiteDatabase, id: Long, accountId: String, messageId: String?, inReplyTo: String?, subject: String, date: Long) {
+        val norm = normalizeSubject(subject)
+        fun keyOf(sql: String, vararg args: Any): String? =
+            db.rawQuery(sql, args.map { it.toString() }.toTypedArray()).use { if (it.moveToFirst() && !it.isNull(0)) it.getString(0) else null }
+        var key: String? = null
+        // 同一封邮件在别的文件夹里已经有会话
+        if (messageId != null)
+            key = keyOf("SELECT thread_key FROM messages WHERE account_id = ? AND message_id = ? AND id != ? AND thread_key IS NOT NULL LIMIT 1", accountId, messageId, id)
+        val parentKey = inReplyTo?.let { keyOf("SELECT thread_key FROM messages WHERE account_id = ? AND message_id = ? AND thread_key IS NOT NULL LIMIT 1", accountId, it) }
+        if (key == null) key = parentKey
+        if (key == null && norm.isNotEmpty() && isReplySubject(subject))
+            key = keyOf(
+                "SELECT thread_key FROM messages WHERE account_id = ? AND subject_norm = ? AND id != ? AND thread_key IS NOT NULL AND date BETWEEN ? AND ? ORDER BY date DESC LIMIT 1",
+                accountId, norm, id, date - 120 * 86_400_000L, date + 86_400_000L
+            )
+        val k = key ?: "m:$id"
+        db.execSQL("UPDATE messages SET thread_key = ?, subject_norm = ? WHERE id = ?", arrayOf<Any>(k, norm, id))
+        // 合并：上级邮件在别的会话里，或者先到的回复各自成了会话
+        fun merge(other: String?) {
+            if (other != null && other != k && !other.startsWith("x:"))
+                db.execSQL("UPDATE messages SET thread_key = ? WHERE account_id = ? AND thread_key = ?", arrayOf(k, accountId, other))
+        }
+        merge(parentKey)
+        if (messageId != null) {
+            val others = db.rawQuery(
+                "SELECT DISTINCT thread_key FROM messages WHERE account_id = ? AND in_reply_to = ? AND thread_key IS NOT NULL",
+                arrayOf(accountId, messageId)
+            ).use { c -> buildList { while (c.moveToNext()) add(c.getString(0)) } }
+            others.forEach { merge(it) }
+        }
     }
 
     private val w: SQLiteDatabase get() = writableDatabase
@@ -163,6 +236,7 @@ class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, 1)
         exec("DELETE FROM folders WHERE account_id = ?", listOf(id))
         exec("DELETE FROM accounts WHERE id = ?", listOf(id))
         exec("DELETE FROM secrets WHERE key LIKE ?", listOf("$id:%"))
+        exec("DELETE FROM outbox WHERE account_id = ?", listOf(id))
     }
 
     fun setSecret(key: String, value: String) = exec("INSERT OR REPLACE INTO secrets (key, value) VALUES (?, ?)", listOf(key, Secrets.encrypt(value)))
@@ -240,8 +314,13 @@ class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, 1)
         hasAtt = c.getInt(c.getColumnIndexOrThrow("has_att")) == 1,
         size = c.getLong(c.getColumnIndexOrThrow("size")),
         snippet = c.getString(c.getColumnIndexOrThrow("snippet")) ?: "",
-        bodyState = c.getInt(c.getColumnIndexOrThrow("body_state"))
+        bodyState = c.getInt(c.getColumnIndexOrThrow("body_state")),
+        threadKey = c.getString(c.getColumnIndexOrThrow("thread_key")),
+        snoozeUntil = c.getColumnIndexOrThrow("snooze_until").let { if (c.isNull(it)) null else c.getLong(it) }
     )
+
+    /** 给 query() 用：把当前行读成 MessageRow（查询里要包含 messages 的全部列） */
+    fun messageFrom(c: Cursor) = message(c)
 
     fun messages(sql: String, args: List<Any?> = emptyList()): List<MessageRow> = query(sql, args) { message(it) }
 
@@ -263,7 +342,9 @@ class Db(context: Context) : SQLiteOpenHelper(context, "moyer-mail.db", null, 1)
             put("has_att", if (m.hasAtt) 1 else 0); put("size", m.size)
         }
         val id = w.insertWithOnConflict("messages", null, v, SQLiteDatabase.CONFLICT_IGNORE)
-        return if (id > 0) id else null
+        if (id <= 0) return null
+        assignThread(w, id, m.accountId, m.messageId, m.inReplyTo, m.subject, m.date)
+        return id
     }
 
     fun deleteMessage(id: Long) {

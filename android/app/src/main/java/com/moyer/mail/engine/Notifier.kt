@@ -73,8 +73,44 @@ object Notifier {
             b.setContentTitle("收到 ${sorted.size} 封新邮件").setContentText(sorted.mapNotNull { it.fromName ?: it.fromAddr }.distinct().take(3).joinToString("、"))
                 .setStyle(inbox).setSubText(accountLabel).setNumber(sorted.size)
         }
+        post(ctx, ("mail:" + first.accountId).hashCode(), b)
+    }
+
+    /** 稍后提醒到点 */
+    fun reminder(ctx: Context, rows: List<MessageRow>) {
+        if (rows.isEmpty() || !canPost(ctx)) return
+        ensureChannels(ctx)
+        val first = rows.maxByOrNull { it.date }!!
+        val sender = first.fromName?.takeIf { it.isNotBlank() } ?: first.fromAddr ?: ""
+        val b = mailBuilder(ctx)
+            .setContentTitle(if (rows.size == 1) "提醒：$sender" else "提醒：${rows.size} 封邮件")
+            .setContentText(first.subject.ifBlank { "（无主题）" })
+            .setContentIntent(openIntent(ctx, first.id))
+        post(ctx, "reminder".hashCode(), b)
+    }
+
+    /** 定时邮件没发出去 */
+    fun scheduledFailed(ctx: Context, subject: String, error: String) {
+        if (!canPost(ctx)) return
+        ensureChannels(ctx)
+        val b = mailBuilder(ctx)
+            .setContentTitle("定时邮件发送失败")
+            .setContentText(subject.ifBlank { "（无主题）" })
+            .setStyle(NotificationCompat.BigTextStyle().bigText("${subject.ifBlank { "（无主题）" }}\n$error"))
+            .setContentIntent(openIntent(ctx, null))
+        post(ctx, "outbox-failed".hashCode(), b)
+    }
+
+    private fun mailBuilder(ctx: Context) = NotificationCompat.Builder(ctx, CHANNEL_MAIL)
+        .setSmallIcon(R.drawable.ic_stat_mail)
+        .setColor(0xFF3D7BF5.toInt())
+        .setAutoCancel(true)
+        .setCategory(NotificationCompat.CATEGORY_EMAIL)
+        .setGroup(GROUP_MAIL)
+
+    private fun post(ctx: Context, id: Int, b: NotificationCompat.Builder) {
         val nm = ctx.getSystemService(NotificationManager::class.java)
-        nm.notify(("mail:" + first.accountId).hashCode(), b.build())
+        nm.notify(id, b.build())
         // 分组摘要：有了它，系统就不会把新邮件和常驻通知硬凑成一组；它自己不响铃，由上面那条负责提醒
         val summary = NotificationCompat.Builder(ctx, CHANNEL_MAIL)
             .setSmallIcon(R.drawable.ic_stat_mail)

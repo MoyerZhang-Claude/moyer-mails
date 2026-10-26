@@ -19,9 +19,10 @@ import javax.mail.internet.MimeMultipart
 import javax.mail.internet.MimeUtility
 import javax.mail.util.ByteArrayDataSource
 
-fun smtpSession(host: String, port: Int, secure: Boolean): Pair<Session, String> {
+fun smtpSession(host: String, port: Int, secure: Boolean, oauth: Boolean = false): Pair<Session, String> {
     val proto = if (secure) "smtps" else "smtp"
     val p = Properties()
+    if (oauth) useXoauth2(p, proto)
     p["mail.$proto.host"] = host
     p["mail.$proto.port"] = port.toString()
     p["mail.$proto.auth"] = "true"
@@ -134,14 +135,14 @@ fun buildMessage(acc: JSONObject, draft: JSONObject, attachmentLoader: (Long, In
 }
 
 /** 通过 SMTP 发出去（密送地址只出现在信封里，不会写进对方收到的信头） */
-fun sendMessage(acc: JSONObject, user: String, pass: String, msg: MimeMessage) {
+fun sendMessage(acc: JSONObject, cred: Creds, msg: MimeMessage) {
     val smtp = acc.getJSONObject("smtp")
     val host = smtp.getString("host")
     val port = smtp.getInt("port")
-    val (session, proto) = smtpSession(host, port, smtp.getBoolean("secure"))
+    val (session, proto) = smtpSession(host, port, smtp.getBoolean("secure"), cred.oauth)
     val t = session.getTransport(proto)
     try {
-        t.connect(host, port, user, pass)
+        t.connect(host, port, cred.user, cred.secret)
         t.sendMessage(msg, msg.allRecipients)
     } finally {
         runCatching { t.close() }

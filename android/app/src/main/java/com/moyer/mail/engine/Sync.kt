@@ -22,6 +22,10 @@ import javax.mail.event.MessageChangedListener
 import javax.mail.event.MessageCountAdapter
 import javax.mail.event.MessageCountEvent
 import javax.mail.internet.InternetAddress
+import javax.mail.search.BodyTerm
+import javax.mail.search.FromStringTerm
+import javax.mail.search.OrTerm
+import javax.mail.search.SubjectTerm
 import kotlin.concurrent.thread
 import kotlin.math.max
 import kotlin.math.min
@@ -32,6 +36,8 @@ private const val INITIAL_WINDOW = 200
 private const val PREFETCH_INBOX = 25
 private const val PREFETCH_OTHER = 8
 private const val PREFETCH_MAX_SIZE = 1_000_000L
+/** “加载更早的邮件”每次取的数量 */
+private const val OLDER_BATCH = 100
 private val AUTO_SYNC = listOf("inbox", "sent", "drafts", "archive", "junk", "trash")
 val ROLE_ORDER = mapOf("inbox" to 0, "drafts" to 1, "sent" to 2, "archive" to 3, "all" to 4, "flagged" to 5, "junk" to 6, "trash" to 7, "other" to 10)
 
@@ -61,10 +67,21 @@ fun roleOf(path: String, name: String, attrs: Array<String>): String {
 
 fun isLoopback(host: String) = host == "127.0.0.1" || host == "localhost" || host == "::1"
 
+/** 登录凭据：授权码/密码，或者 OAuth 拿到的访问令牌（oauth = true） */
+data class Creds(val user: String, val secret: String, val oauth: Boolean)
+
+/** 用 OAuth 令牌登录（Outlook 等）：只允许 XOAUTH2，不退回到密码登录 */
+fun useXoauth2(p: Properties, proto: String) {
+    p["mail.$proto.auth.mechanisms"] = "XOAUTH2"
+    p["mail.$proto.auth.login.disable"] = "true"
+    p["mail.$proto.auth.plain.disable"] = "true"
+}
+
 /** 建立 IMAP 连接用的参数。secure=true 直接 TLS（993），否则强制 STARTTLS */
-fun imapSession(host: String, port: Int, secure: Boolean): Pair<Session, String> {
+fun imapSession(host: String, port: Int, secure: Boolean, oauth: Boolean = false): Pair<Session, String> {
     val proto = if (secure) "imaps" else "imap"
     val p = Properties()
+    if (oauth) useXoauth2(p, proto)
     p["mail.store.protocol"] = proto
     p["mail.$proto.host"] = host
     p["mail.$proto.port"] = port.toString()
@@ -86,8 +103,8 @@ fun imapSession(host: String, port: Int, secure: Boolean): Pair<Session, String>
     return Session.getInstance(p) to proto
 }
 
-fun connectImap(host: String, port: Int, secure: Boolean, user: String, pass: String): IMAPStore {
-    val (session, proto) = imapSession(host, port, secure)
+fun connectImap(host: String, port: Int, secure: Boolean, user: String, pass: String, oauth: Boolean = false): IMAPStore {
+    val (session, proto) = imapSession(host, port, secure, oauth)
     val store = session.getStore(proto) as IMAPStore
     store.connect(host, port, user, pass)
     // 163/126 等网易邮箱要求登录后发送 ID 命令，否则会报 Unsafe Login
@@ -97,9 +114,10 @@ fun connectImap(host: String, port: Int, secure: Boolean, user: String, pass: St
     return store
 }
 
-fun verifySmtp(host: String, port: Int, secure: Boolean, user: String, pass: String) {
+fun verifySmtp(host: String, port: Int, secure: Boolean, user: String, pass: String, oauth: Boolean = false) {
     val proto = if (secure) "smtps" else "smtp"
     val p = Properties()
+    if (oauth) useXoauth2(p, proto)
     p["mail.$proto.host"] = host
     p["mail.$proto.port"] = port.toString()
     p["mail.$proto.auth"] = "true"
@@ -142,13 +160,12 @@ class AccountSession(private val engine: Engine, @Volatile var account: JSONObje
 
     fun statusJson() = jobj("accountId" to id, "phase" to phase, "error" to error, "lastSync" to lastSync)
 
-    private fun password(): String = db.getSecret("$id:password") ?: throw UserError("缺少授权码/密码，请编辑账号重新填写。")
-
     private fun imapConf() = account.getJSONObject("imap")
 
     private fun newStore(): IMAPStore {
         val c = imapConf()
-        return connectImap(c.getString("host"), c.getInt("port"), c.getBoolean("secure"), account.optString("username", account.getString("email")), password())
+        val cred = engine.credentials(account)
+        return connectImap(c.getString("host"), c.getInt("port"), c.getBoolean("secure"), cred.user, cred.secret, cred.oauth)
     }
 
     /** 工作连接：同步、取信、改旗标都在同一个线程里串行执行 */
@@ -367,6 +384,57 @@ class AccountSession(private val engine: Engine, @Volatile var account: JSONObje
     /** 取出一封邮件的第 index 个附件 */
     fun fetchAttachment(r: MessageRow, index: Int): AttachmentData? = withFolder(r.folder, Folder.READ_ONLY) { f ->
         f.getMessageByUID(r.uid)?.let { findAttachment(it, index) }
+    }
+
+    /** 取一批邮件的信头存到本地，返回新插入的本地编号 */
+    private fun insertFetched(f: IMAPFolder, msgs: Array<Message>, path: String, role: String): List<Long> {
+        if (msgs.isEmpty()) return emptyList()
+        f.fetch(msgs, FetchProfile().apply {
+            add(FetchProfile.Item.ENVELOPE); add(FetchProfile.Item.FLAGS); add(FetchProfile.Item.CONTENT_INFO); add(UIDFolder.FetchProfileItem.UID)
+        })
+        val ids = ArrayList<Long>()
+        db.tx { for (m in msgs) db.insertMessage(toNew(f, m, path, role))?.let { ids.add(it) } }
+        return ids
+    }
+
+    /** 加载更早的邮件（每次 OLDER_BATCH 封） */
+    fun loadOlder(path: String): Int {
+        val folder = db.getFolder(id, path) ?: return 0
+        if (folder.noSelect) return 0
+        val known = db.folderUids(id, path)
+        if (known.isEmpty()) {
+            syncFolder(path)
+            return db.folderUids(id, path).size
+        }
+        val n = withFolder(path, Folder.READ_ONLY) { f ->
+            // 取“本地还没有的最新 OLDER_BATCH 封”：只看最新的 (本地数量 + OLDER_BATCH) 封的 UID 就够了，
+            // 这样服务器搜索单独拉下来的旧邮件留下的空档也会被补上
+            val count = f.messageCount
+            if (count == 0) return@withFolder 0
+            val range = f.getMessages(max(1, count - known.size - OLDER_BATCH + 1), count)
+            f.fetch(range, FetchProfile().apply { add(UIDFolder.FetchProfileItem.UID) })
+            val have = known.toHashSet()
+            val pick = range.filter { f.getUID(it) !in have }.takeLast(OLDER_BATCH).toTypedArray()
+            insertFetched(f, pick, path, folder.role).size
+        }
+        if (n > 0) engine.onChanged(id, listOf(path))
+        return n
+    }
+
+    /** 在服务器上搜索（主题 / 发件人 / 正文），把本地还没有的结果（最新的 100 封）拉下来 */
+    fun searchServer(path: String, query: String): List<Long> {
+        val folder = db.getFolder(id, path) ?: return emptyList()
+        if (folder.noSelect) return emptyList()
+        val ids = withFolder(path, Folder.READ_ONLY) { f ->
+            val found = f.search(OrTerm(arrayOf(SubjectTerm(query), FromStringTerm(query), BodyTerm(query))))
+            if (found.isEmpty()) return@withFolder emptyList<Long>()
+            f.fetch(found, FetchProfile().apply { add(UIDFolder.FetchProfileItem.UID) })
+            val known = db.folderUids(id, path).toHashSet()
+            val pick = found.filter { f.getUID(it) !in known }.sortedBy { f.getUID(it) }.takeLast(100).toTypedArray()
+            insertFetched(f, pick, path, folder.role)
+        }
+        if (ids.isNotEmpty()) engine.onChanged(id, listOf(path))
+        return ids
     }
 
     /** 把发出的邮件存一份到“已发送” */

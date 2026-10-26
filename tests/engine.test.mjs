@@ -225,6 +225,18 @@ test('server search finds mail that is not cached locally', async () => {
   assert.equal((await engine.listMessages({ view: { kind: 'unified', box: 'inbox' }, search: 'SSH' })).total, 1)
 })
 
+test('load older fills gaps left by server search', async () => {
+  // 模拟：最老的一封和中间一封都没缓存，而更早的那封已经被服务器搜索拉下来了
+  const { items } = await engine.listMessages({ view: { kind: 'account', accountId }, limit: 10 })
+  const byDate = [...items].sort((a, b) => a.date - b.date)
+  engine.db.deleteMessage(byDate[1].id)
+  assert.equal((await engine.listMessages({ view: { kind: 'account', accountId } })).total, items.length - 1)
+  const n = await engine.loadOlder({ kind: 'account', accountId })
+  assert.equal(n, 1)
+  assert.equal((await engine.listMessages({ view: { kind: 'account', accountId } })).total, items.length)
+  assert.equal(await engine.loadOlder({ kind: 'account', accountId }), 0)
+})
+
 test('marking read updates server and unread count', async () => {
   const { items } = await engine.listMessages({ view: { kind: 'unified', box: 'unread' } })
   assert.equal(items.length, 2)

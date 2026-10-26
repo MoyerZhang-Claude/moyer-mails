@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { ArrowLeft, ChevronRight, Eye, EyeOff, ExternalLink, KeyRound, LoaderCircle, Trash2 } from 'lucide-react'
 import { ACCOUNT_COLORS, PROVIDERS, detectPreset, findPreset, type ProviderPreset } from '@shared/presets'
 import type { AccountDraft, AuthType, ServerConfig } from '@shared/types'
@@ -93,19 +93,24 @@ export function AccountDialog({ accountId, provider }: { accountId?: string; pro
     }
   }, [preset, existing, email, name, label, color, authType, username, imap, smtp, useProxy, appendSent, signature, password, oauth])
 
+  // 等浏览器登录时按钮可以再点一次（重新打开浏览器）；只认最后一次的结果
+  const oauthAttempt = useRef(0)
   const doOAuth = async () => {
+    const mine = ++oauthAttempt.current
     setBusy('oauth')
     setError(null)
     try {
       const r = await api.oauthLogin(authType === 'oauth-google' ? 'google' : 'microsoft', email || undefined)
-      setOauth({ handle: r.handle, email: r.email })
-      if (r.email) setEmail(r.email)
+      if (mine !== oauthAttempt.current) return
+      setOauth({ handle: r.handle, email: r.email || email.trim() })
+      // 已经填了邮箱就不改：微软账号的登录名可能是别的地址（比如 QQ 邮箱），收发信要用 Outlook 地址
+      if (r.email && !email.trim()) setEmail(r.email)
       if (r.name && !name) setName(r.name)
       toast('授权成功', 'ok')
     } catch (err) {
-      setError(errorText(err))
+      if (mine === oauthAttempt.current) setError(errorText(err))
     } finally {
-      setBusy(null)
+      if (mine === oauthAttempt.current) setBusy(null)
     }
   }
 
@@ -238,9 +243,9 @@ export function AccountDialog({ accountId, provider }: { accountId?: string; pro
 
         {isOAuth && (
           <div className="field">
-            <button className="btn soft" style={{ height: 40 }} onClick={doOAuth} disabled={!!busy}>
+            <button className="btn soft" style={{ height: 40 }} onClick={doOAuth} disabled={busy === 'test'}>
               {busy === 'oauth' ? <LoaderCircle size={16} className="spin" /> : <KeyRound size={16} />}
-              {oauth ? `已授权：${oauth.email}（点此重新授权）` : busy === 'oauth' ? '请在浏览器中完成登录…' : `用${providerName}账号登录`}
+              {busy === 'oauth' ? '请在浏览器中完成登录…（点此重新打开）' : oauth ? `已授权：${oauth.email}（点此重新授权）` : `用${providerName}账号登录`}
             </button>
             <div className="hint">
               会打开系统浏览器进行登录，本软件不会接触你的密码。

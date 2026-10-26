@@ -172,7 +172,10 @@ function AndroidBackground({ s }: { s: Settings }) {
   const on = s.backgroundSync !== false
   return (
     <>
-      <Row title="退到后台后继续收信" hint="关掉 App 也能马上收到新邮件通知。通知栏会常驻一条“正在接收邮件”（可以在系统通知设置里把它折叠）">
+      <Row
+        title="退到后台后继续收信"
+        hint="关掉 App 也能马上收到新邮件通知，定时发送和稍后提醒也能按时处理。通知栏会常驻一条“正在接收邮件”（可以在系统通知设置里把它折叠）"
+      >
         <Switch on={on} onChange={(backgroundSync) => updateSettings({ backgroundSync })} />
       </Row>
       {on && (

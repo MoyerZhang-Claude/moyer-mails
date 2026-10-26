@@ -22,7 +22,26 @@
                 <category android:name="android.intent.category.LAUNCHER" />
             </intent-filter>
 
+            <!-- 微软/Google 授权完成后，浏览器里的“返回 Moyer Mail”按钮 -->
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW" />
+                <category android:name="android.intent.category.DEFAULT" />
+                <category android:name="android.intent.category.BROWSABLE" />
+                <data android:scheme="moyermail" android:host="oauth-done" />
+            </intent-filter>
+
         </activity>
+
+        <!-- 稍后提醒、定时发送到点时叫醒应用 -->
+        <receiver android:name=".engine.AlarmReceiver" android:exported="false" />
+
+        <!-- 开机或应用更新后恢复后台收信 -->
+        <receiver android:name=".engine.BootReceiver" android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.BOOT_COMPLETED" />
+                <action android:name="android.intent.action.MY_PACKAGE_REPLACED" />
+            </intent-filter>
+        </receiver>
 
         <!-- 后台收信：保持收件箱的 IDLE 长连接，新邮件马上通知 -->
         <service
@@ -52,4 +71,6 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
     <uses-permission android:name="android.permission.REQUEST_IGNORE_BATTERY_OPTIMIZATIONS" />
+    <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+    <uses-permission android:name="android.permission.SCHEDULE_EXACT_ALARM" />
 </manifest>
