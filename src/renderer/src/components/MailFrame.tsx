@@ -46,11 +46,13 @@ function fitWidth(d: Document) {
   const root = d.documentElement
   const body = d.body
   if (!root || !body) return
+  // 用户双指放大过，就按用户的来，不再自动缩回去
+  if (userZoomOf(body) > 1) return
   // 缩放后排版会变（比如外面出现滚动条、显示区域窄了一点），所以量完再校正，最多三次
   for (let i = 0; i < 3; i++) {
     const avail = root.clientWidth
     if (!avail) return
-    const current = Number(body.dataset.fitZoom || 1)
+    const current = fitZoomOf(body)
     const overflow = root.scrollWidth > avail + 1
     // 现在占的宽度除以当前缩放，就是不缩放时的宽度
     const natural = root.scrollWidth / current
@@ -58,9 +60,46 @@ function fitWidth(d: Document) {
     // 放得下时，变化很小就不动（免得和 ResizeObserver 来回触发）；放不下时一定缩
     if (!overflow && Math.abs(want - current) < 0.02) return
     if (Math.abs(want - current) < 0.001) return
-    body.style.zoom = want >= 1 ? '' : String(want)
     body.dataset.fitZoom = String(want)
+    applyZoom(body)
   }
+}
+
+// ---------------- 双指缩放 ----------------
+/** 双指放大最多到原始大小的 3 倍；最小就是自动适应屏幕宽度的大小 */
+const MAX_ZOOM = 3
+
+const fitZoomOf = (body: HTMLElement) => Number(body.dataset.fitZoom || 1)
+const userZoomOf = (body: HTMLElement) => Number(body.dataset.userZoom || 1)
+
+/** 实际缩放 = 自动适应宽度的缩放 × 用户双指缩放（都记在 body 上，切换原文 / 译文时跟着保留） */
+function applyZoom(body: HTMLElement) {
+  const z = fitZoomOf(body) * userZoomOf(body)
+  body.style.zoom = Math.abs(z - 1) < 0.001 ? '' : String(z)
+}
+
+/**
+ * 把用户缩放改成 user，并让手指中间（cx, cy，正文框里的坐标）那一点留在原处。
+ * 横向由正文自己滚动（放大后比屏幕宽），纵向由外面的阅读区滚动（正文框高度跟着内容变）。
+ */
+function zoomAround(d: Document, frame: HTMLIFrameElement, user: number, cx: number, cy: number, relayout: () => void) {
+  const body = d.body
+  const se = d.scrollingElement
+  if (!body || !se) return
+  const fitZ = fitZoomOf(body)
+  const next = Math.max(1, Math.min(user, MAX_ZOOM / fitZ))
+  const before = fitZ * userZoomOf(body)
+  const after = fitZ * next
+  if (Math.abs(after - before) < 0.001) return
+  // 手指下面那一点在“不缩放的邮件”里的位置
+  const px = (se.scrollLeft + cx) / before
+  const py = cy / before
+  body.dataset.userZoom = String(next)
+  applyZoom(body)
+  relayout()
+  se.scrollLeft = px * after - cx
+  const outer = frame.closest('.reader-scroll')
+  if (outer) outer.scrollTop += py * (after - before)
 }
 
 export interface MailFrameHandle {
@@ -129,6 +168,43 @@ export const MailFrame = forwardRef<MailFrameHandle, { html: string | null; text
     roRef.current = ro
     if (d.body) ro.observe(d.body)
     d.addEventListener('load', fit, true)
+    // 双指缩放（手机）：两根手指捏合 / 张开。手势自己处理，不交给浏览器（浏览器会把整个应用一起缩放）
+    let pinch: { dist: number; user: number } | null = null
+    const spread = (t: TouchList) => Math.hypot(t[0].clientX - t[1].clientX, t[0].clientY - t[1].clientY)
+    d.addEventListener(
+      'touchstart',
+      (e) => {
+        if (e.touches.length === 2 && d.body) pinch = { dist: spread(e.touches) || 1, user: userZoomOf(d.body) }
+      },
+      { passive: true }
+    )
+    d.addEventListener(
+      'touchmove',
+      (e) => {
+        if (!pinch || e.touches.length !== 2) return
+        if (e.cancelable) e.preventDefault()
+        const [a, b] = [e.touches[0], e.touches[1]]
+        zoomAround(d, f, (pinch.user * spread(e.touches)) / pinch.dist, (a.clientX + b.clientX) / 2, (a.clientY + b.clientY) / 2, fit)
+      },
+      { passive: false }
+    )
+    const endPinch = (e: TouchEvent) => {
+      if (e.touches.length < 2) pinch = null
+    }
+    d.addEventListener('touchend', endPinch, { passive: true })
+    d.addEventListener('touchcancel', endPinch, { passive: true })
+    // 电脑：触控板双指捏合（浏览器里表现为按住 Ctrl 的滚轮），或者 Ctrl + 鼠标滚轮
+    d.addEventListener(
+      'wheel',
+      (e) => {
+        if (!e.ctrlKey || !d.body) return
+        e.preventDefault()
+        // 触控板捏合每次只有很小的 deltaY；鼠标滚轮一格是 100 左右，限一下幅度，每格最多放大约 1.27 倍
+        const step = Math.max(-30, Math.min(30, e.deltaY))
+        zoomAround(d, f, userZoomOf(d.body) * Math.exp(-step * 0.008), e.clientX, e.clientY, fit)
+      },
+      { passive: false }
+    )
     // 点邮件里的链接：mailto 直接在本软件写信，网址用系统浏览器打开。
     // （链接带 target=_blank，手机上的 WebView 不支持弹新窗口，不拦下来的话点了没反应）
     d.addEventListener('click', (e) => {

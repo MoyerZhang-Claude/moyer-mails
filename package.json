@@ -1,7 +1,7 @@
 {
   "name": "moyer-mail",
   "productName": "Moyer Mail",
-  "version": "0.3.1",
+  "version": "0.3.2",
   "description": "个人多邮箱统一管理器：QQ / Gmail / Outlook / 163 等，统一收发，内置翻译",
   "author": "Moyer",
   "license": "UNLICENSED",

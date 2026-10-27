@@ -140,6 +140,11 @@ function pick(target: Element): Session | null {
 }
 
 function onStart(e: TouchEvent) {
+  // 拖侧栏时又放下一根手指（多半是想双指缩放）：侧栏退回原位
+  if (e.touches.length > 1 && mode === 'drag') {
+    finish(true)
+    return
+  }
   mode = 'idle'
   session = null
   // 邮件正文里的元素属于 iframe，不能用 instanceof Element 判断
@@ -214,11 +219,12 @@ const attached = new WeakSet<Document>()
 
 /**
  * 邮件正文在 iframe 里，触摸事件不会冒泡到主页面，所以单独挂上。
- * 正文不比屏幕宽时只让浏览器处理上下滚动和缩放，横滑交给这里（否则慢慢滑时会被浏览器当成滚动接走）。
+ * 正文不比屏幕宽时只让浏览器处理上下滚动，横滑交给这里（否则慢慢滑时会被浏览器当成滚动接走）。
  */
 export function attachSwipe(doc: Document) {
   const root = doc.documentElement
-  if (root) root.style.touchAction = root.scrollWidth > root.clientWidth + 2 ? '' : 'pan-y pinch-zoom'
+  // 双指缩放由 MailFrame 自己处理，所以都不让浏览器管 pinch；正文比屏幕宽（比如放大以后）时允许左右拖
+  if (root) root.style.touchAction = root.scrollWidth > root.clientWidth + 2 ? 'pan-x pan-y' : 'pan-y'
   if (attached.has(doc)) return
   attached.add(doc)
   listen(doc)
